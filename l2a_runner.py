@@ -37,47 +37,6 @@ class L2A_process_runner():
         cmd = f"{self.l2a_process_loc} {self.input_dir} --resolution {self.resolution} --output_dir {self.output_dir}"
         os.system(cmd)
 
-def scale_SCL(image_file):
-    modified_image_file = image_file.split(".")[0] + "_modified.jp2"
-    SCL = rasterio.open(image_file)
-    data = SCL.read()
-    scaling_factor = 7 # ~ 255/33
-    data = data * scaling_factor
-    with rasterio.open('modified_image_file.jp2', 'w', **SCL.meta) as dst:
-        dst.write(data)
-
-
-def scl_to_rgb(rio_scl):
-    # map the data to the following colors
-    colour_dict = {
-        0: (0, 0, 0),  # black: no data
-        1: (255,0,0),  # red: saturated or defective
-        2: (50,50,50),  # dark grey: casted shadows
-        3: (165,42,42),  # brown: cloud shadows
-        4: (0,100,0),  # green: vegetation
-        5: (255,255,0),  # yellow: bare soils
-        6: (0,0,255),  # blue: water
-        7: (128,128,128),  # grey: unclassified
-        8: (211,211,211),  # light grey: cloud medium probability
-        9: (255,255,255),  # white: cloud high probability
-        10: (0,255,255),  # light blue: thin cirrus
-        11: (255,192,203)  # pink: snow
-    }
-
-    # create a new array with the same shape as the original data
-    # but with 3 channels (RGB)
-    scl_array = rio_scl.read(1)
-    rgb = np.zeros((rio_scl.height, rio_scl.width, 3), dtype=np.uint8)
-
-    # map the data to RGB
-    for k, v in colour_dict.items():
-        rgb[scl_array == k] = v
-
-    # plot the RGB image
-    import matplotlib.pyplot as plt
-    plt.imshow(rgb)
-    plt.show()
-
 if __name__ == "__main__":
     input_dir = "/scratch/toml/sentinel_2_data/S2A_MSIL1C_20230906T102601_N0509_R108_T32TMT_20230906T141124.SAFE"
     output_dir = "/scratch/toml/sentinel_2_data"
