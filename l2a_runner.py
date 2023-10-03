@@ -33,8 +33,12 @@ class L2A_process_runner():
         """ 
         Run the L2A process
         """
-        # cmd = self.l2a_process_loc + " --resolution 60 " + self.input_dir + " --output_dir " + self.output_dir
-        cmd = f"{self.l2a_process_loc} {self.input_dir} --resolution {self.resolution} --output_dir {self.output_dir}"
+        if os.environ.get("SEN2COR_MOD_SC_ONLY") is not None:
+            sc_only = " --sc_only"
+        else:
+            sc_only = ""
+
+        cmd = f"{self.l2a_process_loc} {self.input_dir} --resolution {self.resolution} --output_dir {self.output_dir}{sc_only}"
         os.system(cmd)
 
 if __name__ == "__main__":

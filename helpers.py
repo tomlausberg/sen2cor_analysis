@@ -2,6 +2,7 @@ import rasterio as rio
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from l2a_analysis import L2A_Band, L2A_Analysis
 
 
 def plot_true_color_image(product):
@@ -84,9 +85,35 @@ def plot_band_difference_histogram(reference, modified, band):
     plt.show()
 
 
+def plot_band_histogram(reference, bands, plot_title="Histogram of bands"):
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+    for band in bands:
+        reference_array = reference[band].read(1).astype(np.float32).flatten()
+
+        ax.hist(
+            reference_array,
+            bins=100,
+            alpha=0.5,
+            label=band,
+        )
+    ax.set_title(plot_title)
+    ax.set_yscale("log")
+    ax.legend()
+    plt.show()
+
+
 def plot_difference_histogram(
     reference, modified, bands, plot_title="Histogram of differences"
 ):
+    """
+    Plot the histogram of the pixelwise difference between the reference l2a product
+    and the modified l2a product.
+    Arguments:
+        reference: dictionary of reference bands
+        modified: dictionary of modified bands
+        bands: list of strings of bands
+        plot_title: string of plot title
+    """
     bands = ["B02", "B03", "B04", "B05", "B06", "B07", "B8A", "B11", "B12"]
     # bands = ['SCL', 'AOT', 'TCI']
     fig, ax = plt.subplots(1, 1, figsize=(5, 5))
@@ -107,8 +134,18 @@ def plot_difference_histogram(
     ax.legend()
     plt.show()
 
-def multiplot_difference_histogram(l2aa, locs,mods, bands):
-    fig, ax = plt.subplots(nrows=len(mods), ncols=len(locs), figsize=(15, 15))
+
+def multiplot_difference_histogram(l2aa: L2A_Analysis, locs, mods, bands):
+    """
+    Plot the histogram of the pixelwise difference between the reference l2a product
+    and the modified l2a product for multiple locations and modifications.
+    Arguments:
+        l2aa: L2A_Analysis object
+        locs: list of strings of locations
+        mods: list of strings of modifications
+        bands: list of strings of bands
+    """
+    fig, ax = plt.subplots(nrows=len(mods), ncols=len(locs), figsize=(12, 12))
     for loc in locs:
         reference = l2aa.reference_bands[loc]
         for mod in mods:
@@ -128,14 +165,23 @@ def multiplot_difference_histogram(l2aa, locs,mods, bands):
                 ax[mods.index(mod), locs.index(loc)].set_title(f"{loc} {mod}")
                 ax[mods.index(mod), locs.index(loc)].set_yscale("log")
                 ax[mods.index(mod), locs.index(loc)].legend()
-    
 
 
 def get_stats(reference, modified, bands):
+    """
+    Get the stats for a single location and modification
+    Arguments:
+        reference: dictionary of reference bands
+        modified: dictionary of modified bands
+        bands: list of strings of bands
+    Returns:
+        stats: dataframe containing the mean, std div, min, max for each band
+    """
     cols = ["mean", "std", "max", "min"]
     stats = pd.DataFrame(columns=cols)
     for band in bands:
-        current_band = reference[band].read(1).flatten().astype(np.float32) - modified[band
+        current_band = reference[band].read(1).flatten().astype(np.float32) - modified[
+            band
         ].read(1).flatten().astype(np.float32)
         stats.loc[band] = [
             np.mean(current_band),
@@ -147,6 +193,15 @@ def get_stats(reference, modified, bands):
 
 
 def get_stats_average(reference, modified, bands):
+    """
+    Get the average stats for a single location and modification
+    Arguments:
+        reference: dictionary of reference bands
+        modified: dictionary of modified bands
+        bands: list of strings of bands
+    Returns:
+        stats: series containing the average mean, std div, min, max over all bands
+    """
     cols = ["mean", "std", "max", "min"]
     stats = pd.DataFrame(columns=cols)
     for band in bands:
@@ -162,12 +217,22 @@ def get_stats_average(reference, modified, bands):
 
     return stats.mean(axis=0)
 
-def get_stats_average_multi(l2aa, locs, mods, bands):
+
+def get_stats_average_multi(l2aa: L2A_Analysis, locs, mods, bands):
+    """
+    Get the average stats for a list of locations and modifications
+    Arguments:
+        l2aa: L2A_Analysis object
+        locs: list of strings of locations
+        mods: list of strings of modifications
+        bands: list of strings of bands
+    Returns:
+        stats: dictionary of dataframes containing the average mean, std div, min, max for each location and modification
+    """
     stats = {}
     dataframes = ["mean", "std", "max", "min"]
     for df in dataframes:
         stats[df] = pd.DataFrame(columns=mods)
-    
 
     for loc in locs:
         reference = l2aa.reference_bands[loc]
@@ -182,9 +247,9 @@ def get_stats_average_multi(l2aa, locs, mods, bands):
             mod_mins = []
             for mod in mods:
                 modified = l2aa.modified_bands[loc][mod]
-                current_band = reference[band].read(1).flatten().astype(np.float32) - modified[
-                    band
-                ].read(1).flatten().astype(np.float32)
+                current_band = reference[band].read(1).flatten().astype(
+                    np.float32
+                ) - modified[band].read(1).flatten().astype(np.float32)
                 mod_means.append(np.mean(current_band))
                 mod_stds.append(np.std(current_band))
                 mod_maxs.append(np.max(current_band))
@@ -197,7 +262,7 @@ def get_stats_average_multi(l2aa, locs, mods, bands):
         stats["std"].loc[loc] = loc_stds.mean(axis=0)
         stats["max"].loc[loc] = loc_maxs.mean(axis=0)
         stats["min"].loc[loc] = loc_mins.mean(axis=0)
-    
+
     return stats
 
 

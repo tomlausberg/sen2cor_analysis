@@ -7,15 +7,22 @@ import numpy as np
 import l2a_runner
 
 
-class L2A_band(object):
+class L2A_Band(object):
     def __init__(self, jp2_path):
         self.jp2_path = jp2_path
+        with rio.open(self.jp2_path, driver="JP2OpenJPEG") as src:
+            self.height = src.height
+            self.width = src.width
 
     def read(self, number=1):
         data = None
         with rio.open(self.jp2_path, driver="JP2OpenJPEG") as src:
             data = src.read(number)
         return data
+    
+    
+    
+    
 
 
 class L2A_Analysis(object):
@@ -23,10 +30,10 @@ class L2A_Analysis(object):
     Runs l2a process for different locations and locations.
     """
 
-    def __init__(self):
+    def __init__(self, report_name="TEST"):
         self.base_input_dir = "/scratch/toml/sentinel_2_data/locations"
         self.base_output_dir = "/scratch/toml/sentinel_2_data/reports"
-        self.report_dir = f"{self.base_output_dir}/TEST5"
+        self.report_dir = f"{self.base_output_dir}/{report_name}"
         self.resolution = 60
         self.bands = [
             "B01",
@@ -178,7 +185,7 @@ class L2A_Analysis(object):
                     f"{loc['tile']}_{loc['date_take']}_{band}_{self.resolution}m.jp2"
                 )
                 jp2_path = f"{granule_path}/IMG_DATA/R{self.resolution}m/{band_file}"
-                self.reference_bands[loc_name][band] = L2A_band(jp2_path)
+                self.reference_bands[loc_name][band] = L2A_Band(jp2_path)
 
         # populate modified dict
         for data_run in self.data_info["modified"]:
@@ -192,7 +199,7 @@ class L2A_Analysis(object):
                     f"{loc['tile']}_{loc['date_take']}_{band}_{self.resolution}m.jp2"
                 )
                 jp2_path = f"{granule_path}/IMG_DATA/R{self.resolution}m/{band_file}"
-                self.modified_bands[loc_name][mod_name][band] = L2A_band(jp2_path)
+                self.modified_bands[loc_name][mod_name][band] = L2A_Band(jp2_path)
 
     def clean_l2a_data(self):
         self.reference_bands = {}
