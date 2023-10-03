@@ -11,8 +11,10 @@ class L2A_Band(object):
     def __init__(self, jp2_path):
         self.jp2_path = jp2_path
         with rio.open(self.jp2_path, driver="JP2OpenJPEG") as src:
-            self.height = src.height
-            self.width = src.width
+            self.meta = src.meta
+            # set attributes from meta to imitate rasterio datasetReader
+            for key, value in self.meta.items():
+                setattr(self, key, value)
 
     def read(self, number=1):
         data = None
@@ -20,9 +22,59 @@ class L2A_Band(object):
             data = src.read(number)
         return data
     
+class L2A_Band_Stack(object):
+    def __init__(self, granule_image_data_path):
+        self.band_names = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B8A',
+                           'B09', 'B11', 'B12', 'AOT', 'SCL', 'TCI', 'WVP']
+        self.data_path = granule_image_data_path
+        self.bands = {}
+        self.meta = {}
+        self.init_bands()
+    
+    def init_bands(self):
+        for band in os.listdir(self.data_path):
+            # example band name: T32UNU_20190623T100031_B01_60m.jp2
+            band_path = f"{self.data_path}/{band}"
+            band_name = band.split("_")[2]
+            if band_name in self.band_names:
+                self.bands[band_name] = L2A_Band(band_path)
+            else:
+                raise ValueError(f"Invalid band name: {band_name}, expected one of {self.band_names}")
+            
+            # if first band, set meta
+            if len(self.meta) == 0:
+                self.meta = self.bands[band_name].meta
+        
+        self.meta['count'] = len(self.bands)
+
+    def read(self, band_name):
+        return self.bands[band_name].read()
+    
+    def read_bands(self, band_names=None):
+        """
+        Read multiple bands from the stack
+        """
+        if band_names is None:
+            band_names = self.band_names
+        elif band_names is "rgb":
+            band_names = ['B04', 'B03', 'B02']
+        elif band_names is "false_color":
+            band_names = ['B08', 'B04', 'B03']
+        elif isinstance(band_names, list):
+            # check if all band names are valid
+            for band_name in band_names:
+                if band_name not in self.band_names:
+                    raise ValueError(f"Invalid band name: {band_name}, expected one of {self.band_names}")
+            band_names = [band_names]
+        else:
+            raise ValueError(f"Invalid band_names argument: {band_names}, expected None, 'rgb', 'false_color', or list of band names")
+
+        return [self.bands[band].read() for band in band_names]
     
     
     
+
+
 
 
 class L2A_Analysis(object):

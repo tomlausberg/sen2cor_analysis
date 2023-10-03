@@ -5,20 +5,27 @@ import pandas as pd
 from l2a_analysis import L2A_Band, L2A_Analysis
 
 
-def plot_true_color_image(product):
-    brightness = 4.0
-    blue = product["B02"].read() * brightness / 65536
-    green = product["B03"].read() * brightness / 65536
-    red = product["B04"].read() * brightness / 65536
-
+def plot_true_color_image(product, gamma=1.5, title="True Color Image", clip_value=65536):
+    blue = product["B02"].read() 
+    green = product["B03"].read() 
+    red = product["B04"].read() 
     rgb = np.dstack((red, green, blue))
-    print(f"Max value: {np.max(rgb)}")
+
+    # clip values
+    rgb[rgb > clip_value] = clip_value
+    # normalize rgb
+    rgb = rgb / rgb.max()
+
+    #do gamma transformation
+    rgb_gamma = np.power(rgb, 1/gamma)
+
+
     fig, ax = plt.subplots(1, 1, figsize=(5, 5))
     ax.imshow(
         rgb,
         interpolation="none",
     )
-    ax.set_title("True Color Image")
+    ax.set_title(title)
     ax.set_axis_off()
     plt.show()
 
@@ -145,7 +152,7 @@ def multiplot_difference_histogram(l2aa: L2A_Analysis, locs, mods, bands):
         mods: list of strings of modifications
         bands: list of strings of bands
     """
-    fig, ax = plt.subplots(nrows=len(mods), ncols=len(locs), figsize=(12, 12))
+    fig, ax = plt.subplots(nrows=len(mods), ncols=len(locs), figsize=(15, 15))
     for loc in locs:
         reference = l2aa.reference_bands[loc]
         for mod in mods:
@@ -297,3 +304,7 @@ def plot_scl_in_rgb(rio_scl):
 
     plt.imshow(rgb)
     plt.show()
+
+
+def get_max_difference_to_l2a(l2aa: L2A_Analysis, loc, mods, bands):
+    pass
