@@ -2,14 +2,14 @@ import rasterio as rio
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from l2a_analysis import L2A_Band, L2A_Analysis
+from l2a_analysis import L2A_Analysis, L2A_Band, L2A_Band_Stack
 
 
-def plot_true_color_image(product, gamma=1.5, title="True Color Image", clip_value=65536):
-    blue = product["B02"].read() 
-    green = product["B03"].read() 
-    red = product["B04"].read() 
-    rgb = np.dstack((red, green, blue))
+def plot_rgb_image(product, red_band, green_band, blue_band, clip_value=65536, gamma=1, title=None):
+    if title is None:
+        title = f"False colour RGB with bands {red_band}, {green_band}, {blue_band}"
+    bands = product.read_bands([red_band, green_band, blue_band])
+    rgb = np.dstack(bands)
 
     # clip values
     rgb[rgb > clip_value] = clip_value
@@ -25,30 +25,15 @@ def plot_true_color_image(product, gamma=1.5, title="True Color Image", clip_val
         rgb,
         interpolation="none",
     )
-    ax.set_title(title)
+    ax.set_title()
     ax.set_axis_off()
     plt.show()
 
 
-def plot_rgb_image(product, red_band, green_band, blue_band):
-    brightness = 5.0
-    blue = product[blue_band].read(1) * brightness / 65536
-    green = product[green_band].read(1) * brightness / 65536
-    red = product[red_band].read(1) * brightness / 65536
+def plot_true_color_image(product, gamma=1, title="True Color Image", clip_value=65536):
+    plot_rgb_image(product, "B04", "B03", "B02", clip_value, gamma, title)
 
-    rgb = np.dstack((red, green, blue))
-    print(f"Max value: {np.max(rgb)}")
-    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-    ax.imshow(
-        rgb,
-        interpolation="none",
-    )
-    ax.set_title(f"False colour RGB with bands {red_band}, {green_band}, {blue_band}")
-    ax.set_axis_off()
-    plt.show()
-
-
-def plot_band(product, band, color_map="Blues"):
+def plot_band(product, band, color_map="Blues", ):
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
     ax.imshow(
         product[band].read(1),
@@ -92,11 +77,10 @@ def plot_band_difference_histogram(reference, modified, band):
     plt.show()
 
 
-def plot_band_histogram(reference, bands, plot_title="Histogram of bands"):
+def plot_band_histogram(reference: L2A_Band_Stack, bands=None, plot_title="Histogram of bands"):
     fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-    for band in bands:
+    for band in reference.read_bands(bands):
         reference_array = reference[band].read(1).astype(np.float32).flatten()
-
         ax.hist(
             reference_array,
             bins=100,
@@ -110,26 +94,26 @@ def plot_band_histogram(reference, bands, plot_title="Histogram of bands"):
 
 
 def plot_difference_histogram(
-    reference, modified, bands, plot_title="Histogram of differences"
+    reference: L2A_Band_Stack, modified: L2A_Band_Stack, bands=None, plot_title="Histogram of differences"
 ):
     """
     Plot the histogram of the pixelwise difference between the reference l2a product
     and the modified l2a product.
     Arguments:
-        reference: dictionary of reference bands
-        modified: dictionary of modified bands
+        reference: L2A_Band_Stack object of reference product
+        modified: L2A_Band_Stack object of modified product
         bands: list of strings of bands
         plot_title: string of plot title
     """
-    bands = ["B02", "B03", "B04", "B05", "B06", "B07", "B8A", "B11", "B12"]
-    # bands = ['SCL', 'AOT', 'TCI']
+    if bands is None:
+        bands = ["B02", "B03", "B04", "B05", "B06", "B07", "B8A", "B11", "B12"]
     fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+    
     for band in bands:
         reference_array = reference[band].read(1).astype(np.float32).flatten()
         modified_array = modified[band].read(1).astype(np.float32).flatten()
 
         difference_array = reference_array - modified_array
-
         ax.hist(
             difference_array,
             bins=100,
@@ -186,6 +170,7 @@ def get_stats(reference, modified, bands):
     """
     cols = ["mean", "std", "max", "min"]
     stats = pd.DataFrame(columns=cols)
+    
     for band in bands:
         current_band = reference[band].read(1).flatten().astype(np.float32) - modified[
             band
@@ -307,4 +292,27 @@ def plot_scl_in_rgb(rio_scl):
 
 
 def get_max_difference_to_l2a(l2aa: L2A_Analysis, loc, mods, bands):
-    pass
+    """
+    Get the maximum difference between the reference l2a product and the modified l2a product
+    Arguments:
+        l2aa: L2A_Analysis object
+        loc: string of location
+        mods: list of strings of modifications
+        bands: list of strings of bands
+    Returns:
+        max_diff: numpy array of maximum difference for each pixel
+        band_id: numpy array of ids of the band with the maximum difference for each pixel
+    """
+    
+    max_diff = np.zeros_like(l2aa.reference_bands[loc]["B02"].read())
+    band_id = np.zeros_like(l2aa.reference_bands[loc]["B02"].read())
+
+    if bands is None:
+        bands = "bands"
+
+    for ref, mod in zip(l2aa.reference_bands[loc].read_bands(bands), l2aa.modified_bands[loc][mods].read_bands(bands)):
+        diff = ref.read() - mod.read()
+        max_diff = np.maximum(max_diff, diff)
+        band_id[diff == max_diff] = ref.band_id
+    
+    return max_diff, band_id

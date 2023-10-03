@@ -8,8 +8,10 @@ import l2a_runner
 
 
 class L2A_Band(object):
-    def __init__(self, jp2_path):
+    def __init__(self, jp2_path, name, band_id):
         self.jp2_path = jp2_path
+        self.name = name
+        self.id = band_id
         with rio.open(self.jp2_path, driver="JP2OpenJPEG") as src:
             self.meta = src.meta
             # set attributes from meta to imitate rasterio datasetReader
@@ -21,6 +23,9 @@ class L2A_Band(object):
         with rio.open(self.jp2_path, driver="JP2OpenJPEG") as src:
             data = src.read(number)
         return data
+
+    def __str__(self) -> str:
+        return object.__str__(self) + f" jp2_path: {self.jp2_path}"
     
 class L2A_Band_Stack(object):
     def __init__(self, granule_image_data_path):
@@ -31,13 +36,17 @@ class L2A_Band_Stack(object):
         self.meta = {}
         self.init_bands()
     
+    # allows stack to be indexed like a dictionary
+    def __getitem__(self, key):
+        return self.bands[key]
+    
     def init_bands(self):
         for band in os.listdir(self.data_path):
-            # example band name: T32UNU_20190623T100031_B01_60m.jp2
             band_path = f"{self.data_path}/{band}"
             band_name = band.split("_")[2]
             if band_name in self.band_names:
-                self.bands[band_name] = L2A_Band(band_path)
+                idx = self.band_names.index(band_name)
+                self.bands[band_name] = L2A_Band(band_path, band_name, idx)
             else:
                 raise ValueError(f"Invalid band name: {band_name}, expected one of {self.band_names}")
             
@@ -53,13 +62,21 @@ class L2A_Band_Stack(object):
     def read_bands(self, band_names=None):
         """
         Read multiple bands from the stack
+        Valid band_names arguments:
+            None: all bands incl meta bands
+            'rgb': bands B04, B03, B02
+            'false_color': bands B8A, B04, B03
+            'bands': all bands excl meta bands
+            list of band names: bands with names in list
         """
         if band_names is None:
             band_names = self.band_names
-        elif band_names is "rgb":
+        elif band_names == "rgb":
             band_names = ['B04', 'B03', 'B02']
-        elif band_names is "false_color":
-            band_names = ['B08', 'B04', 'B03']
+        elif band_names == "false_color":
+            band_names = ['B8A', 'B04', 'B03']
+        elif band_names == "bands":
+            band_names = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B8A', 'B09', 'B11', 'B12']
         elif isinstance(band_names, list):
             # check if all band names are valid
             for band_name in band_names:
@@ -72,7 +89,25 @@ class L2A_Band_Stack(object):
         return [self.bands[band].read() for band in band_names]
     
     
-    
+    def create_new_band(self, band_name: str, data: np.ndarray):
+        """
+        Create a new band in the band stack
+        Arguments:
+            band_name: string of band name
+            data: numpy array of band data
+        """
+        if band_name in self.band_names:
+            raise ValueError(f"Band {band_name} already exists in band stack")
+        else:
+            self.band_names.append(band_name)
+            example_name = os.listdir(self.data_path)[0].split("_")
+            file_name = f"{example_name[0]}_{example_name[1]}_{band_name}.jp2"
+            band_meta = self.meta.copy()
+            band_meta['count'] = 1
+            with rio.open(f"{self.data_path}/{file_name}", 'w', **self.meta) as dst:
+                dst.write(data, 1)
+            self.bands[band_name] = L2A_Band(f"{self.data_path}/{file_name}", band_name)
+            self.meta['count'] += 1
 
 
 
@@ -221,10 +256,7 @@ class L2A_Analysis(object):
         self.reference_bands = {}
         self.modified_bands = {}
         for loc_name, loc_dict in self.locations.items():
-            self.reference_bands[loc_name] = {}
             self.modified_bands[loc_name] = {}
-            for mod in self.modifications:
-                self.modified_bands[loc_name][mod["name"]] = {}
 
         # populate reference dict
         for data_run in self.data_info["reference"]:
@@ -232,26 +264,22 @@ class L2A_Analysis(object):
             loc_name = loc["loc_name"]
             granule_path = f"{data_run['output_dir']}/{os.listdir(data_run['output_dir'])[0]}/GRANULE"
             granule_path = f"{granule_path}/{os.listdir(granule_path)[0]}"
-            for band in self.bands:
-                band_file = (
-                    f"{loc['tile']}_{loc['date_take']}_{band}_{self.resolution}m.jp2"
-                )
-                jp2_path = f"{granule_path}/IMG_DATA/R{self.resolution}m/{band_file}"
-                self.reference_bands[loc_name][band] = L2A_Band(jp2_path)
+            jp2_path = f"{granule_path}/IMG_DATA/R{self.resolution}m/"
+
+            self.reference_bands[loc_name] = L2A_Band_Stack(jp2_path)
 
         # populate modified dict
         for data_run in self.data_info["modified"]:
             loc = data_run["loc"]
             loc_name = loc["loc_name"]
             mod_name = data_run["mod"]["name"]
+            
             granule_path = f"{data_run['output_dir']}/{os.listdir(data_run['output_dir'])[0]}/GRANULE"
             granule_path = f"{granule_path}/{os.listdir(granule_path)[0]}"
-            for band in self.bands:
-                band_file = (
-                    f"{loc['tile']}_{loc['date_take']}_{band}_{self.resolution}m.jp2"
-                )
-                jp2_path = f"{granule_path}/IMG_DATA/R{self.resolution}m/{band_file}"
-                self.modified_bands[loc_name][mod_name][band] = L2A_Band(jp2_path)
+            jp2_path = f"{granule_path}/IMG_DATA/R{self.resolution}m/"
+            
+            self.modified_bands[loc_name][mod_name] = L2A_Band_Stack(jp2_path)
+
 
     def clean_l2a_data(self):
         self.reference_bands = {}
