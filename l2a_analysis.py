@@ -28,9 +28,13 @@ class L2A_Band(object):
         return object.__str__(self) + f" jp2_path: {self.jp2_path}"
     
 class L2A_Band_Stack(object):
-    def __init__(self, granule_image_data_path):
-        self.band_names = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B8A',
-                           'B09', 'B11', 'B12', 'AOT', 'SCL', 'TCI', 'WVP']
+    def __init__(self, band_names, granule_image_data_path):
+        """
+        Arguments:
+            band_names: list of band names
+            granule_image_data_path: path to granule image data
+        """
+        self.band_names = band_names 
         self.data_path = granule_image_data_path
         self.bands = {}
         self.meta = {}
@@ -42,11 +46,15 @@ class L2A_Band_Stack(object):
     
     def init_bands(self):
         for band in os.listdir(self.data_path):
+            if band.split(".")[-1] != "jp2":
+                print(f"Skipping {band} as it is not a jp2 file")
+                continue
             band_path = f"{self.data_path}/{band}"
             band_name = band.split("_")[2]
             if band_name in self.band_names:
                 idx = self.band_names.index(band_name)
                 self.bands[band_name] = L2A_Band(band_path, band_name, idx)
+                print(f"Added band {band_name} to stack")
             else:
                 raise ValueError(f"Invalid band name: {band_name}, expected one of {self.band_names}")
             
@@ -82,7 +90,6 @@ class L2A_Band_Stack(object):
             for band_name in band_names:
                 if band_name not in self.band_names:
                     raise ValueError(f"Invalid band name: {band_name}, expected one of {self.band_names}")
-            band_names = [band_names]
         else:
             raise ValueError(f"Invalid band_names argument: {band_names}, expected None, 'rgb', 'false_color', or list of band names")
 
@@ -106,7 +113,7 @@ class L2A_Band_Stack(object):
             band_meta['count'] = 1
             with rio.open(f"{self.data_path}/{file_name}", 'w', **self.meta) as dst:
                 dst.write(data, 1)
-            self.bands[band_name] = L2A_Band(f"{self.data_path}/{file_name}", band_name)
+            self.bands[band_name] = L2A_Band(f"{self.data_path}/{file_name}", band_name, self.meta['count'])
             self.meta['count'] += 1
 
 
@@ -186,7 +193,10 @@ class L2A_Analysis(object):
         }
         """
         self.modifications = modifications
-
+    
+    def get_modification_names(self):
+        return [mod['name'] for mod in self.modifications]
+    
     def run_sen2cor(self):
         """
         Run the l2a process for each location and modification
@@ -266,7 +276,7 @@ class L2A_Analysis(object):
             granule_path = f"{granule_path}/{os.listdir(granule_path)[0]}"
             jp2_path = f"{granule_path}/IMG_DATA/R{self.resolution}m/"
 
-            self.reference_bands[loc_name] = L2A_Band_Stack(jp2_path)
+            self.reference_bands[loc_name] = L2A_Band_Stack(self.bands,jp2_path)
 
         # populate modified dict
         for data_run in self.data_info["modified"]:
@@ -278,7 +288,7 @@ class L2A_Analysis(object):
             granule_path = f"{granule_path}/{os.listdir(granule_path)[0]}"
             jp2_path = f"{granule_path}/IMG_DATA/R{self.resolution}m/"
             
-            self.modified_bands[loc_name][mod_name] = L2A_Band_Stack(jp2_path)
+            self.modified_bands[loc_name][mod_name] = L2A_Band_Stack(self.bands,jp2_path)
 
 
     def clean_l2a_data(self):
