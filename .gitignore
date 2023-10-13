@@ -4,3 +4,5 @@ __pycache__
 *.py[cod]
 *.tiff
 *.jp2
+outputs/*
+credentials.json

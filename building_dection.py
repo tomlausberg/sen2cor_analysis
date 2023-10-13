@@ -95,3 +95,9 @@ def crop_to_extent(geojson_fn, raster_fn, out_fn):
     print(raster_extent)
     # crop raster to extent of geojson
     gdal.Translate(out_fn, ds, projWin=raster_extent)
+
+
+def get_credentials():
+    with open("credentials.json") as f:
+        data = json.load(f)
+    return data["username"], data["password"]
