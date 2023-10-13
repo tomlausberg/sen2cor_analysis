@@ -372,7 +372,6 @@ def plot_scl_in_rgb(rio_scl, title=None):
 
     handles = []
     labels = []
-    print("Starting to plot SCL")
 
     import matplotlib.patches as mpatches
 
@@ -387,7 +386,6 @@ def plot_scl_in_rgb(rio_scl, title=None):
             )
         )
         labels.append(class_dict[scene_class]["description"])
-    print("Finished plotting SCL")
 
     # plot the RGB image with a legend
     ax, fig = plt.subplots(1, 1, figsize=(10, 10))
@@ -480,6 +478,7 @@ def comparison_matrix(l2aa: L2A_Analysis, loc, mods, bands):
                 )["mean"]
     return comparison_matrix.astype(np.float32)
 
+
 def get_comparison_matrices(l2aa: L2A_Analysis, loc, mods, bands):
     """
     Get the comparison matricies of modifications for a single location
@@ -516,9 +515,12 @@ def get_comparison_matrices(l2aa: L2A_Analysis, loc, mods, bands):
 
     # combine the dataframes into a single dataframe
     comparsion_matrix = pd.concat(
-        [comp_mean, comp_std, comp_max, comp_min], keys=["mean", "std", "max", "min"], axis=1
+        [comp_mean, comp_std, comp_max, comp_min],
+        keys=["mean", "std", "max", "min"],
+        axis=1,
     )
     return comparsion_matrix.astype(np.float32)
+
 
 def plot_comparison_matrix(comp_matrix):
     """
@@ -533,9 +535,33 @@ def plot_comparison_matrix(comp_matrix):
     ax.set_xticklabels(comp_matrix.columns)
     ax.set_yticklabels(comp_matrix.columns)
     ax.set_title("Comparison Matrix")
-    #add colorbar
+    # add colorbar
     cbar = ax.figure.colorbar(im, ax=ax)
     cbar.ax.set_ylabel("difference", rotation=-90, va="bottom")
 
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
     plt.show
+
+
+def get_modification_names(modification_dicts):
+    """
+    Get the names of the modifications from the modification dictionarys
+    Arguments:
+        modification_dict: list of dictionaries of modifications
+            Format:
+            [
+                {
+                    "flag" : "enviroment variable",
+                    "value" : "value of enviroment variable",
+                    "description" : "description of modification",
+                    "name" : "name of modification"
+                },
+                ...
+            ]
+    Returns:
+        mod_names: list of strings of modification names
+    """
+    mod_names = []
+    for mod in modification_dicts:
+        mod_names.append(mod["name"])
+    return mod_names
