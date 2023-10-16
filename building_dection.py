@@ -5,6 +5,16 @@ import json
 import pyproj
 from osgeo import gdal
 import subprocess
+import zipfile
+
+
+from sentinelsat import (
+    SentinelAPI,
+    read_geojson,
+    geojson_to_wkt,
+    LTAError,
+    LTATriggered,
+)
 
 
 def reproject_geojson(geojson_fn, src_crs, tgt_crs, out_fn=None):
@@ -77,11 +87,8 @@ def crop_to_extent(geojson_fn, raster_fn, out_fn):
     vector_ds = gdal.OpenEx(geojson_fn, gdal.OF_VECTOR)
     vector_extent = vector_ds.GetLayer().GetExtent()
     vector_crs = pyproj.CRS.from_wkt(vector_ds.GetLayer().GetSpatialRef().__str__())
-    print(vector_crs)
-    print(vector_extent)
     ds = gdal.Open(raster_fn)
     raster_crs = pyproj.CRS.from_wkt(ds.GetProjection())
-    print(raster_crs)
     # convert extent to raster crs
     transformer = pyproj.Transformer.from_crs(vector_crs, raster_crs, always_xy=True)
     raster_extent1 = transformer.transform(vector_extent[0], vector_extent[3])
@@ -92,7 +99,6 @@ def crop_to_extent(geojson_fn, raster_fn, out_fn):
         raster_extent2[0],
         raster_extent2[1],
     )
-    print(raster_extent)
     # crop raster to extent of geojson
     gdal.Translate(out_fn, ds, projWin=raster_extent)
 
@@ -101,3 +107,113 @@ def get_credentials():
     with open("credentials.json") as f:
         data = json.load(f)
     return data["username"], data["password"]
+
+
+def get_labels(train_path):
+    labels = []
+    for train_dir in os.listdir(train_path):
+        geojson_filename = (
+            f"global_monthly_2018_01_mosaic_{train_dir}_Buildings.geojson"
+        )
+        label_geojson = f"{train_path}/{train_dir}/labels/{geojson_filename}"
+        if os.path.isfile(label_geojson):
+            labels.append(label_geojson)
+        else:
+            print(f"Label file {label_geojson} not found")
+    return labels
+
+
+def get_sentinel2_product_id(footprint):
+    """Takes a WKT footprint and returns the product id of the least cloudy Sentinel-2 product or None if no product is found."""
+    user, password = get_credentials()
+    api = SentinelAPI(user, password, "https://scihub.copernicus.eu/dhus")
+
+    products = api.query(
+        footprint,
+        # date=("20230901", "20230930"),
+        date=("20200101", "20200131"),
+        platformname="Sentinel-2",
+        processinglevel="Level-1C",
+        cloudcoverpercentage=(0, 30),
+        area_relation="Contains",
+    )
+
+    products_df = api.to_dataframe(products)
+    if products_df.shape[0] > 0:
+        products_df_sorted = products_df.sort_values(
+            "cloudcoverpercentage", ascending=True
+        )
+        print("Found product")
+        return products_df_sorted.index[0]
+    else:
+        print("No product found")
+        return None
+
+
+def get_sentinel2_product_ids(labels):
+    """Takes a list of geojson labels and returns a dictionary of product ids and labels."""
+    products = {}
+    for label in labels:
+        try:
+            label_name = label.split("_mosaic_")[-1].split("_Buildings")[0]
+            print(label_name)
+            ds = gdal.OpenEx(label, gdal.OF_VECTOR)
+            extent = ds.GetLayer().GetExtent()
+            footprint = f"POLYGON(({extent[0]} {extent[2]}, {extent[1]} {extent[2]}, {extent[1]} {extent[3]}, {extent[0]} {extent[3]}, {extent[0]} {extent[2]}))"
+            products[label_name] = get_sentinel2_product_id(footprint)
+        except Exception as e:
+            print(f"Error: {e}")
+            continue
+            # raise e
+    return products
+
+
+def download_sentinel2_products(id_dict, download_path):
+    downloaded_products = []
+    user, password = get_credentials()
+    api = SentinelAPI(user, password, "https://scihub.copernicus.eu/dhus")
+
+    for label_name, product_id in id_dict.items():
+        data_dir = os.path.join(download_path, label_name)
+        if os.path.isfile(os.path.join(data_dir, "product_info.json")) == False:
+            os.mkdir(data_dir)
+            try:
+                product_info = api.download(
+                    product_id, directory_path=download_path, checksum=True
+                )
+            except LTATriggered as e:
+                print(f"LTATriggered: {e}")
+                continue
+            # extact zip
+            zip_path = os.path.join(download_path, product_info["title"] + ".zip")
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(download_path)
+                # remove zip
+            os.remove(zip_path)
+            # move .SAFE to labeled folder
+            safe_path = f"{data_dir}/{product_info['title']}.SAFE"
+            os.rename(f"{download_path}/{product_info['title']}.SAFE", safe_path)
+            # update product_info
+            product_info["label"] = label_name
+            product_info["path"] = safe_path
+            downloaded_products.append(product_info)
+            # save product_info as json
+            json_dump = product_info.copy()
+            # serialize datetimes
+            json_dump["date"] = json_dump["date"].strftime("%Y-%m-%d %H:%M:%S")
+            json_dump["Creation Date"] = json_dump["Creation Date"].strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            json_dump["Ingestion Date"] = json_dump["Ingestion Date"].strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            with open(os.path.join(data_dir, "product_info.json"), "w") as f:
+                json.dump(json_dump, f)
+            print(f"Downloaded {product_id} to {download_path}")
+        else:
+            print(f"Product {product_id} already downloaded")
+            with open(os.path.join(data_dir, "product_info.json"), "r") as f:
+                product_info = json.load(f)
+                downloaded_products.append(product_info)
+
+    return downloaded_products
