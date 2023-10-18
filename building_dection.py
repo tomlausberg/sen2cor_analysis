@@ -1,12 +1,13 @@
 import os
 import rasterio as rio
+
 import numpy as np
 import json
 import pyproj
 from osgeo import gdal
 import subprocess
 import zipfile
-
+from datetime import datetime
 
 from sentinelsat import (
     SentinelAPI,
@@ -103,6 +104,32 @@ def crop_to_extent(geojson_fn, raster_fn, out_fn):
     gdal.Translate(out_fn, ds, projWin=raster_extent)
 
 
+def crop_to_extent2(extent_fn, raster_fn, out_fn):
+    # get extent
+    with rio.open(extent_fn) as ds:
+        extent = ds.bounds
+        extent_crs = ds.crs
+    with rio.open(raster_fn) as ds:
+        # transform extent to raster crs
+        transformer = pyproj.Transformer.from_crs(extent_crs, ds.crs, always_xy=True)
+        raster_extent1 = transformer.transform(extent[0], extent[3])
+        raster_extent2 = transformer.transform(extent[1], extent[2])
+        raster_extent = (
+            raster_extent1[0],
+            raster_extent1[1],
+            raster_extent2[0],
+            raster_extent2[1],
+        )
+    # crop raster to extent
+    with rio.open(out_fn) as out_ds:
+        out_ds.write(
+            ds.read(
+                window=rio.windows.from_bounds(*raster_extent, ds.transform), indexes=1
+            )
+        )
+    # gdal.Translate(out_fn, raster_fn, projWin=raster_extent)
+
+
 def get_credentials():
     with open("credentials.json") as f:
         data = json.load(f)
@@ -118,20 +145,20 @@ def get_labels(train_path):
         label_geojson = f"{train_path}/{train_dir}/labels/{geojson_filename}"
         if os.path.isfile(label_geojson):
             labels.append(label_geojson)
-        else:
-            print(f"Label file {label_geojson} not found")
+        # else:
+        #     print(f"Label file {label_geojson} not found")
     return labels
 
 
 def get_sentinel2_product_id(footprint):
     """Takes a WKT footprint and returns the product id of the least cloudy Sentinel-2 product or None if no product is found."""
     user, password = get_credentials()
-    api = SentinelAPI(user, password, "https://scihub.copernicus.eu/dhus")
+    api = SentinelAPI(user, password, "https://apihub.copernicus.eu/apihub/")
 
     products = api.query(
         footprint,
-        # date=("20230901", "20230930"),
-        date=("20200101", "20200131"),
+        date=("20230901", "20230930"),
+        # date=("20200101", "20200131"),
         platformname="Sentinel-2",
         processinglevel="Level-1C",
         cloudcoverpercentage=(0, 30),
@@ -143,7 +170,7 @@ def get_sentinel2_product_id(footprint):
         products_df_sorted = products_df.sort_values(
             "cloudcoverpercentage", ascending=True
         )
-        print("Found product")
+        print(f"Found product {products_df_sorted.index[0]}")
         return products_df_sorted.index[0]
     else:
         print("No product found")
@@ -156,7 +183,7 @@ def get_sentinel2_product_ids(labels):
     for label in labels:
         try:
             label_name = label.split("_mosaic_")[-1].split("_Buildings")[0]
-            print(label_name)
+            print(label_name, end=": ")
             ds = gdal.OpenEx(label, gdal.OF_VECTOR)
             extent = ds.GetLayer().GetExtent()
             footprint = f"POLYGON(({extent[0]} {extent[2]}, {extent[1]} {extent[2]}, {extent[1]} {extent[3]}, {extent[0]} {extent[3]}, {extent[0]} {extent[2]}))"
@@ -168,52 +195,95 @@ def get_sentinel2_product_ids(labels):
     return products
 
 
-def download_sentinel2_products(id_dict, download_path):
-    downloaded_products = []
+# def download_sentinel2_products(id_dict, download_path):
+#     downloaded_products = []
+#     user, password = get_credentials()
+#     api = SentinelAPI(user, password, "https://apihub.copernicus.eu/apihub/")
+
+#     for label_name, product_id in id_dict.items():
+#         data_dir = os.path.join(download_path, label_name)
+#         if os.path.isfile(os.path.join(data_dir, "product_info.json")) == False:
+#             try:
+#                 os.mkdir(data_dir)
+#             except FileExistsError:
+#                 pass
+#             try:
+#                 product_info = api.download(
+#                     [product_id], directory_path=download_path, checksum=True
+#                 )
+#             except LTATriggered as e:
+#                 print(f"LTATriggered: {e}")
+#                 continue
+#             # extact zip
+#             zip_path = os.path.join(download_path, product_info["title"] + ".zip")
+#             with zipfile.ZipFile(zip_path, "r") as zip_ref:
+#                 zip_ref.extractall(download_path)
+#                 # remove zip
+#             os.remove(zip_path)
+#             # move .SAFE to labeled folder
+#             safe_path = f"{data_dir}/{product_info['title']}.SAFE"
+#             os.rename(f"{download_path}/{product_info['title']}.SAFE", safe_path)
+#             # update product_info
+#             product_info["label"] = label_name
+#             product_info["path"] = safe_path
+#             downloaded_products.append(product_info)
+#             # save product_info as json
+#             json_dump = product_info.copy()
+#             # serialize datetimes
+#             json_dump["date"] = json_dump["date"].strftime("%Y-%m-%d %H:%M:%S")
+#             json_dump["Creation Date"] = json_dump["Creation Date"].strftime(
+#                 "%Y-%m-%d %H:%M:%S"
+#             )
+#             json_dump["Ingestion Date"] = json_dump["Ingestion Date"].strftime(
+#                 "%Y-%m-%d %H:%M:%S"
+#             )
+#             with open(os.path.join(data_dir, "product_info.json"), "w") as f:
+#                 json.dump(json_dump, f)
+#             print(f"Downloaded {product_id} to {download_path}")
+#         else:
+#             print(f"Product {product_id} already downloaded")
+#             with open(os.path.join(data_dir, "product_info.json"), "r") as f:
+#                 product_info = json.load(f)
+#                 downloaded_products.append(product_info)
+
+#     return downloaded_products
+
+
+def get_sentinel2_products(id_dict, download_path):
     user, password = get_credentials()
-    api = SentinelAPI(user, password, "https://scihub.copernicus.eu/dhus")
+    api = SentinelAPI(user, password, "https://apihub.copernicus.eu/apihub/")
+
+    product_ids = []
 
     for label_name, product_id in id_dict.items():
-        data_dir = os.path.join(download_path, label_name)
-        if os.path.isfile(os.path.join(data_dir, "product_info.json")) == False:
-            os.mkdir(data_dir)
+        if os.path.exists(os.path.join(download_path, product_id)) is False:
+            product_ids.append(product_id)
+            # check if product is online
             try:
-                product_info = api.download(
-                    product_id, directory_path=download_path, checksum=True
-                )
-            except LTATriggered as e:
-                print(f"LTATriggered: {e}")
+                product_info = api.get_product_odata(product_id)
+            except LTAError as e:
+                print(f"LTAError: {e}")
                 continue
-            # extact zip
-            zip_path = os.path.join(download_path, product_info["title"] + ".zip")
-            with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                zip_ref.extractall(download_path)
-                # remove zip
-            os.remove(zip_path)
-            # move .SAFE to labeled folder
-            safe_path = f"{data_dir}/{product_info['title']}.SAFE"
-            os.rename(f"{download_path}/{product_info['title']}.SAFE", safe_path)
-            # update product_info
-            product_info["label"] = label_name
-            product_info["path"] = safe_path
-            downloaded_products.append(product_info)
-            # save product_info as json
-            json_dump = product_info.copy()
-            # serialize datetimes
-            json_dump["date"] = json_dump["date"].strftime("%Y-%m-%d %H:%M:%S")
-            json_dump["Creation Date"] = json_dump["Creation Date"].strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-            json_dump["Ingestion Date"] = json_dump["Ingestion Date"].strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-            with open(os.path.join(data_dir, "product_info.json"), "w") as f:
-                json.dump(json_dump, f)
-            print(f"Downloaded {product_id} to {download_path}")
+            print(f"Product {product_id}: {'Online' if product_info['Online'] else 'Offline'}")
         else:
             print(f"Product {product_id} already downloaded")
-            with open(os.path.join(data_dir, "product_info.json"), "r") as f:
-                product_info = json.load(f)
-                downloaded_products.append(product_info)
 
-    return downloaded_products
+    product_infos = api.download_all(
+        product_ids, directory_path=download_path, checksum=True,
+    )
+
+    invert_products = {v: k for k, v in id_dict.items()}
+
+    for product_info in product_infos:
+        zip_path = os.path.join(download_path, product_info["title"] + ".zip")
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(download_path)
+            # remove zip
+        os.remove(zip_path)
+        # move .SAFE to labeled folder
+        product_info['date'] = product_info['date'].strftime("%Y-%m-%d %H:%M:%S")
+        product_info['Creation Date'] = product_info['Creation Date'].strftime("%Y-%m-%d %H:%M:%S")
+        product_info['Ingestion Date'] = product_info['Ingestion Date'].strftime("%Y-%m-%d %H:%M:%S")
+        product_info["label"] = invert_products[product_info["id"]]
+        product_info["path"] = os.path.join(download_path, product_info["title"] + ".SAFE")
+    return product_infos
