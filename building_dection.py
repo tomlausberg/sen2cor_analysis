@@ -157,8 +157,8 @@ def get_sentinel2_product_id(footprint):
 
     products = api.query(
         footprint,
-        date=("20230901", "20230930"),
-        # date=("20200101", "20200131"),
+        # date=("20230901", "20230930"),
+        date=("20200101", "20200131"),
         platformname="Sentinel-2",
         processinglevel="Level-1C",
         cloudcoverpercentage=(0, 30),
@@ -187,6 +187,7 @@ def get_sentinel2_product_ids(labels):
             ds = gdal.OpenEx(label, gdal.OF_VECTOR)
             extent = ds.GetLayer().GetExtent()
             footprint = f"POLYGON(({extent[0]} {extent[2]}, {extent[1]} {extent[2]}, {extent[1]} {extent[3]}, {extent[0]} {extent[3]}, {extent[0]} {extent[2]}))"
+            print(footprint)
             products[label_name] = get_sentinel2_product_id(footprint)
         except Exception as e:
             print(f"Error: {e}")
@@ -251,7 +252,9 @@ def get_sentinel2_product_ids(labels):
 
 def get_sentinel2_products(id_dict, download_path):
     user, password = get_credentials()
-    api = SentinelAPI(user, password, "https://apihub.copernicus.eu/apihub/")
+    api = SentinelAPI(
+        user, password, "https://apihub.copernicus.eu/apihub/", show_progressbars=True
+    )
 
     product_ids = []
 
@@ -264,12 +267,16 @@ def get_sentinel2_products(id_dict, download_path):
             except LTAError as e:
                 print(f"LTAError: {e}")
                 continue
-            print(f"Product {product_id}: {'Online' if product_info['Online'] else 'Offline'}")
+            print(
+                f"Product {product_id}: {'Online' if product_info['Online'] else 'Offline'}"
+            )
         else:
             print(f"Product {product_id} already downloaded")
 
     product_infos = api.download_all(
-        product_ids, directory_path=download_path, checksum=True,
+        product_ids,
+        directory_path=download_path,
+        checksum=True,
     )
 
     invert_products = {v: k for k, v in id_dict.items()}
@@ -281,9 +288,15 @@ def get_sentinel2_products(id_dict, download_path):
             # remove zip
         os.remove(zip_path)
         # move .SAFE to labeled folder
-        product_info['date'] = product_info['date'].strftime("%Y-%m-%d %H:%M:%S")
-        product_info['Creation Date'] = product_info['Creation Date'].strftime("%Y-%m-%d %H:%M:%S")
-        product_info['Ingestion Date'] = product_info['Ingestion Date'].strftime("%Y-%m-%d %H:%M:%S")
+        product_info["date"] = product_info["date"].strftime("%Y-%m-%d %H:%M:%S")
+        product_info["Creation Date"] = product_info["Creation Date"].strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        product_info["Ingestion Date"] = product_info["Ingestion Date"].strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         product_info["label"] = invert_products[product_info["id"]]
-        product_info["path"] = os.path.join(download_path, product_info["title"] + ".SAFE")
+        product_info["path"] = os.path.join(
+            download_path, product_info["title"] + ".SAFE"
+        )
     return product_infos
