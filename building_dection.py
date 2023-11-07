@@ -150,15 +150,14 @@ def get_labels(train_path):
     return labels
 
 
-def get_sentinel2_product_id(footprint):
+def get_sentinel2_product_id(footprint, date=("20200101", "20200131")):
     """Takes a WKT footprint and returns the product id of the least cloudy Sentinel-2 product or None if no product is found."""
     user, password = get_credentials()
     api = SentinelAPI(user, password, "https://apihub.copernicus.eu/apihub/")
 
     products = api.query(
         footprint,
-        # date=("20230901", "20230930"),
-        date=("20200101", "20200131"),
+        date=date,
         platformname="Sentinel-2",
         processinglevel="Level-1C",
         cloudcoverpercentage=(0, 30),
@@ -259,7 +258,10 @@ def get_sentinel2_products(id_dict, download_path):
     product_ids = []
 
     for label_name, product_id in id_dict.items():
-        if os.path.exists(os.path.join(download_path, product_id)) is False:
+        if (
+            product_id is not None
+            and os.path.exists(os.path.join(download_path, product_id)) is False
+        ):
             product_ids.append(product_id)
             # check if product is online
             try:
@@ -281,12 +283,13 @@ def get_sentinel2_products(id_dict, download_path):
 
     invert_products = {v: k for k, v in id_dict.items()}
 
-    for product_info in product_infos:
+    for product_info in product_infos.downloaded.values():
+        print(product_info)
         zip_path = os.path.join(download_path, product_info["title"] + ".zip")
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(download_path)
-            # remove zip
-        os.remove(zip_path)
+        # remove zip
+        # os.remove(zip_path)
         # move .SAFE to labeled folder
         product_info["date"] = product_info["date"].strftime("%Y-%m-%d %H:%M:%S")
         product_info["Creation Date"] = product_info["Creation Date"].strftime(
@@ -299,4 +302,4 @@ def get_sentinel2_products(id_dict, download_path):
         product_info["path"] = os.path.join(
             download_path, product_info["title"] + ".SAFE"
         )
-    return product_infos
+    return product_infos.downloaded.values()

@@ -6,3 +6,4 @@ __pycache__
 *.jp2
 outputs/*
 credentials.json
+*.out

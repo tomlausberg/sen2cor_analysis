@@ -142,7 +142,13 @@ class L2A_Analysis(object):
     Runs l2a process for different locations and locations.
     """
 
-    def __init__(self, report_name="TEST", base_input_dir=None, base_output_dir=None):
+    def __init__(
+        self,
+        report_name="TEST",
+        base_input_dir=None,
+        base_output_dir=None,
+        resolution=60,
+    ):
         if base_input_dir is not None:
             self.base_input_dir = base_input_dir
         else:
@@ -152,7 +158,11 @@ class L2A_Analysis(object):
         else:
             self.base_output_dir = "/scratch/toml/sentinel_2_data/reports"
         self.report_dir = f"{self.base_output_dir}/{report_name}"
-        self.resolution = 60
+        if resolution not in [10, 20, 60]:
+            raise ValueError(
+                f"Invalid resolution: {resolution}, expected one of [10, 20, 60]"
+            )
+        self.resolution = resolution
         self.bands = [
             "B01",
             "B02",
@@ -161,6 +171,7 @@ class L2A_Analysis(object):
             "B05",
             "B06",
             "B07",
+            "B08",
             "B8A",
             "B09",
             "B11",
@@ -196,7 +207,7 @@ class L2A_Analysis(object):
             self.locations[loc_name] = {
                 "loc_name": loc_name,
                 "l1c_product_name": loc_product_description[0],
-                "l1c_path": f"{self.base_input_dir}/{loc_name}/{loc_path}",
+                "l1c_path": f"{self.base_input_dir}/{loc_path}",
                 "mission_id": misssion_id,
                 "date_take": date_take,
                 "processing_baseline": processing_baseline,
