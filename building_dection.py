@@ -303,3 +303,24 @@ def get_sentinel2_products(id_dict, download_path):
             download_path, product_info["title"] + ".SAFE"
         )
     return product_infos.downloaded.values()
+
+
+def convert_band_images_to_ndarray(image_dir, bands):
+    with rio.open(image_dir + "B02.tif") as src:
+        image = src.read(1)
+    image_dims = image.shape
+    x_image = np.zeros(( image_dims[0] * image_dims[1], len(bands)), dtype=np.float32)
+    for i, band in enumerate(bands):
+        with rio.open(image_dir + band + ".tif") as src:
+            image = src.read(1)
+        x_image[:,i] = image.flatten()
+    return x_image
+
+def convert_labels_to_raster_file( labels: np.ndarray, orginal_label_file, raster_file):
+    """ Converts 1d array to a 2d raster using rasterio """
+    with rio.open(orginal_label_file, 'r', driver='GTiff') as src:
+        shape = src.shape
+        meta = src.meta
+    labels = labels.reshape(shape)
+    with rio.open(raster_file, 'w', **meta) as dst:
+        dst.write(labels, 1)

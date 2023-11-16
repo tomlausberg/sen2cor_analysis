@@ -129,7 +129,7 @@ class L2A_Band_Stack(object):
             file_name = f"{example_name[0]}_{example_name[1]}_{band_name}.jp2"
             band_meta = self.meta.copy()
             band_meta["count"] = 1
-            with rio.open(f"{self.data_path}/{file_name}", "w", **self.meta) as dst:
+            with rio.open(f"{self.data_path}/{file_name}", "w", **band_meta) as dst:
                 dst.write(data, 1)
             self.bands[band_name] = L2A_Band(
                 f"{self.data_path}/{file_name}", band_name, self.meta["count"]
