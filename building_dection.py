@@ -1,13 +1,15 @@
 import os
-import rasterio as rio
-
-import numpy as np
 import json
-import pyproj
-from osgeo import gdal
 import subprocess
 import zipfile
 from datetime import datetime
+import math
+
+import rasterio as rio
+import geopandas as gpd
+import numpy as np
+import pyproj
+from osgeo import gdal
 
 from sentinelsat import (
     SentinelAPI,
@@ -140,7 +142,7 @@ def get_labels(train_path):
     labels = []
     for train_dir in os.listdir(train_path):
         geojson_filename = (
-            f"global_monthly_2018_01_mosaic_{train_dir}_Buildings.geojson"
+            f"global_monthly_2020_01_mosaic_{train_dir}_Buildings.geojson"
         )
         label_geojson = f"{train_path}/{train_dir}/labels/{geojson_filename}"
         if os.path.isfile(label_geojson):
@@ -150,10 +152,10 @@ def get_labels(train_path):
     return labels
 
 
-def get_sentinel2_product_id(footprint, date=("20200101", "20200131")):
+def get_sentinel2_product_id(footprint, date=("20231101", "20231120")):
     """Takes a WKT footprint and returns the product id of the least cloudy Sentinel-2 product or None if no product is found."""
     user, password = get_credentials()
-    api = SentinelAPI(user, password, "https://apihub.copernicus.eu/apihub/")
+    api = SentinelAPI(user, password, "https://scihub.copernicus.eu/dhus/")
 
     products = api.query(
         footprint,
@@ -324,3 +326,28 @@ def convert_labels_to_raster_file( labels: np.ndarray, orginal_label_file, raste
     labels = labels.reshape(shape)
     with rio.open(raster_file, 'w', **meta) as dst:
         dst.write(labels, 1)
+
+def convert_geojson_to_utm_raster(vector_file, raster_file, resolution=10):
+    gdf = gpd.read_file(vector_file)
+
+    # convert to utm
+    gdf = gdf.to_crs(gdf.estimate_utm_crs())
+
+    # Define the bounding box and resolution for the raster image
+    bounds = gdf.total_bounds
+
+    # Create a raster dataset
+    with rio.Env():
+        with rio.open(
+                raster_file, 'w',
+                driver='GTiff',
+                height=int((bounds[3] - bounds[1]) / resolution),
+                width=int((bounds[2] - bounds[0]) / resolution),
+                count=1,
+                dtype='uint8',
+                crs=gdf.crs,
+                transform=rio.Affine(resolution, 0, int(bounds[0]), 0, -resolution, int(bounds[3]))
+        ) as dst:
+            # Rasterize the GeoDataFrame to the created raster dataset
+            mask = rio.features.geometry_mask(gdf.geometry, out_shape=dst.shape, transform=dst.transform, invert=True)
+            dst.write(mask.astype('uint8'), 1)

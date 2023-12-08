@@ -10,10 +10,17 @@ input_dir = "input"
 output_dir = "output"
 
 
-def modify_GIPP(reference_GIPP, custom_GIPP):
+def modify_GIPP(reference_GIPP, custom_GIPP, region_of_interest=None):
     GIPP_tree = ET.parse(reference_GIPP)
     root = GIPP_tree.getroot()
     
+    # set region of interest
+    if region_of_interest is not None:
+        root.find("Region_Of_Interest").find("row0").text = region_of_interest[0]
+        root.find("Region_Of_Interest").find("col0").text = region_of_interest[1]
+        root.find("Region_Of_Interest").find("nrow_win").text = region_of_interest[2]
+        root.find("Region_Of_Interest").find("ncol_win").text = region_of_interest[3]
+
     # Modify Atmospheric_Correction.Look_Up_Tables for Aerosol_Type, Mid_Latitude, Ozone_Content
     # RURAL, MARITIME, AUTO 
     if os.environ.get("SEN2COR_MODIFY_LUT_AEROSOL") is not None:
@@ -80,14 +87,14 @@ class L2A_process_runner:
         self.output_dir = output_dir
         self.resolution = resolution
 
-    def run(self):
+    def run(self, region_of_interest=None):
         """
         Run the L2A process
         """
         reference_GIPP =  "/home/toml/sen2cor/2.11/cfg/L2A_GIPP.xml"
         custom_GIPP = "/home/toml/sen2cor/2.11/cfg/L2A_GIPP_custom.xml"
 
-        modify_GIPP(reference_GIPP, custom_GIPP)
+        modify_GIPP(reference_GIPP, custom_GIPP, region_of_interest=region_of_interest)
 
         if os.environ.get("SEN2COR_MOD_SC_ONLY") is not None:
             sc_only = " --sc_only"

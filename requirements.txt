@@ -2,6 +2,10 @@ numpy
 pandas
 matplotlib
 rasterio
-gdal
+GDAL==3.4.1
 pyproj
 sentinelsat
+scikit-learn
+joblib
+pyproj
+

@@ -253,7 +253,10 @@ class L2A_Analysis(object):
                 runner = l2a_runner.L2A_process_runner(
                     loc_dict["l1c_path"], output_dir, resolution=self.resolution
                 )
-                runner.run()
+                if loc_dict.get("region_of_interest") == "None" or loc_dict.get("region_of_interest") is None:
+                    runner.run()
+                else:
+                    runner.run(region_of_interest=loc_dict["region_of_interest"])
 
             info_dict = {
                 "name": f"{loc_name}_{mod_name}",
@@ -333,3 +336,8 @@ class L2A_Analysis(object):
         self.modified_bands = {}
         # recursively delete report_dir
         os.system(f"rm -r {self.report_dir}")
+
+    def add_region_of_interest(self, loc_name, region_of_interest):
+        if loc_name not in self.locations.keys():
+            raise ValueError(f"Invalid location name: {loc_name}")
+        self.locations[loc_name]["region_of_interest"] = region_of_interest
