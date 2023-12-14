@@ -2,10 +2,11 @@ numpy
 pandas
 matplotlib
 rasterio
-GDAL==3.4.1
+# GDAL
 pyproj
 sentinelsat
 scikit-learn
 joblib
 pyproj
-
+requests
+requests-oauthlib
