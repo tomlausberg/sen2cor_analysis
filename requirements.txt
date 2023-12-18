@@ -2,7 +2,7 @@ numpy
 pandas
 matplotlib
 rasterio
-# GDAL
+# GDAL==3.7.0
 pyproj
 sentinelsat
 scikit-learn
@@ -11,3 +11,4 @@ pyproj
 requests
 requests-oauthlib
 sentinelhub[AWS]
+geopandas

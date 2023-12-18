@@ -6,10 +6,12 @@ from datetime import datetime
 import math
 
 import rasterio as rio
+import rasterio.features
 import geopandas as gpd
 import numpy as np
 import pyproj
 from osgeo import gdal
+import xml.etree.ElementTree as ET
 
 from sentinelsat import (
     SentinelAPI,
@@ -351,3 +353,81 @@ def convert_geojson_to_utm_raster(vector_file, raster_file, resolution=10):
             # Rasterize the GeoDataFrame to the created raster dataset
             mask = rio.features.geometry_mask(gdf.geometry, out_shape=dst.shape, transform=dst.transform, invert=True)
             dst.write(mask.astype('uint8'), 1)
+
+
+def get_GRANULE_dir(SAFE_dir):
+    """ Returns the path to the GRANULE directory in the SAFE directory """
+    return SAFE_dir / "GRANULE" / os.listdir(SAFE_dir / "GRANULE")[0]
+
+def get_SAFE_extent(SAFE_dir):
+    """ Returns the extent of the SAFE directory in the form [ulx, lry, lrx, uly] """
+    MTD_TL_xml_path = str(get_GRANULE_dir(SAFE_dir) / "MTD_TL.xml")
+    root = ET.parse(MTD_TL_xml_path).getroot()
+    tile_geocoding_el = root.findall(".//Tile_Geocoding")[0]
+    size_el = tile_geocoding_el.findall(".//Size[@resolution='10']")[0]
+    nrow = int(size_el.find('NROWS').text)
+    ncol = int(size_el.find('NCOLS').text)
+    geoposition_element = root.findall(".//Geoposition[@resolution='10']")[0]
+    ulx = int(geoposition_element.find('ULX').text)
+    uly = int(geoposition_element.find('ULY').text)
+    lrx = ulx + ncol * 10
+    lry = uly - nrow * 10
+    return [ulx, lry, lrx, uly]
+
+def get_region_of_interest(raster_label, raster_SAFE_dir):
+    """ Returns the region of interest for a safe file for a corresponding label raster file 
+    
+    Parameters:
+    raster_label (str): path to label raster file
+    raster_SAFE_dir (str): path to safe directory
+
+    Returns:
+    list: [row0, col0, nrow_win, ncol_win] to be used in GIPP
+    """
+
+    label_ds = gdal.Open(str(raster_label))
+    label_extent = label_ds.GetGeoTransform()
+    label_ulx = label_extent[0]
+    label_uly = label_extent[3]
+    label_lrx = label_ulx + label_ds.RasterXSize * label_extent[1]
+    label_lry = label_uly + label_ds.RasterYSize * label_extent[5]
+
+    del label_ds
+    
+    SAFE_ulx, SAFE_lry, SAFE_lrx, SAFE_uly = get_SAFE_extent(raster_SAFE_dir)
+
+    row0 = math.floor((SAFE_uly - label_uly) / 10)
+    col0 = math.floor((label_ulx - SAFE_ulx) / 10)
+    nrow_win = math.ceil((label_uly - label_lry) / 10)
+    ncol_win = math.ceil((label_lrx - label_ulx) / 10)
+
+    print(f'label_extent: ulx: {label_ulx}\tuly: {label_uly}\tlrx: {label_lrx}\tlry: {label_lry}')
+    print(f'SAFE_extent: ulx:  {SAFE_ulx}\tuly: {SAFE_uly}\tlrx: {SAFE_lrx}\tlry: {SAFE_lry}')
+    return [row0, col0, nrow_win, ncol_win]
+
+
+def transform_roi_for_sen2cor(roi):
+    """
+
+    Parameters:
+        roi (list): [first_row, first_col, nrow, ncol]
+
+    Returns:
+        sen2cor_roi (list): [row0, col0, nrow_win, ncol_win] 
+            row0, col0: specifies the midpoint of the region of interest
+            nrow_win, ncol_win defines a rectangle around the midpoint in pixel
+            row0, col0, nrow_win and ncol_win must be integer divisible by 6, to prevent rounding errors for downsampling
+            specify always a 10m resolution ROI, it will be automatically adapted to the lower resolutions
+
+    """
+    buffer = 12 # 12 pixel buffer around the roi
+
+    nrow_win =  math.ceil(roi[2] / 6) * 6 + buffer # make sure nrow_win is divisible by 6
+    ncol_win =  math.ceil(roi[3] / 6) * 6 + buffer
+
+    row0 = roi[0] + math.floor(roi[2] / 2) # center of roi
+    col0 = roi[1] + math.floor(roi[3] / 2)
+
+    sen2cor_roi = [str(row0), str(col0), str(nrow_win), str(ncol_win)]
+
+    return sen2cor_roi

@@ -84,7 +84,7 @@ def get_labels(train_path):
         geojson_filename = (
             f"global_monthly_2020_01_mosaic_{train_dir}_Buildings.geojson"
         )
-        label_geojson = f"{train_path}/{train_dir}/labels/{geojson_filename}"
+        label_geojson = pathlib.Path(train_path) / train_dir / "labels" / geojson_filename
         if os.path.isfile(label_geojson):
             labels.append(label_geojson)
         # else:
@@ -101,13 +101,20 @@ def get_sentinel2_product_ids(client: Client, labels):
     products = {}
     for label in labels:
         try:
-            label_name = label.split("_mosaic_")[-1].split("_Buildings")[0]
+            label_name = str(label).split("_mosaic_")[-1].split("_Buildings")[0]
             print(label_name, end=": ")
-            ds = gdal.OpenEx(label, gdal.OF_VECTOR)
+            ds = gdal.OpenEx(str(label), gdal.OF_VECTOR)
             extent = ds.GetLayer().GetExtent()
             footprint = f"POLYGON(({extent[0]} {extent[2]}, {extent[1]} {extent[2]}, {extent[1]} {extent[3]}, {extent[0]} {extent[3]}, {extent[0]} {extent[2]}))"
             print(footprint)
-            products[label_name] = client.search(start_date,end_date,platform,footprint).iloc[0].to_dict()
+            prod_list = client.search(start_date,end_date,platform,footprint)
+            for index, row in prod_list.iterrows():
+                # check name contains "MSIL1C"
+                if "MSIL1C" in row['Name']: # Only use L1C products
+                    print(f"Found {row['Name']}")
+                    products[label_name] = row.to_dict()
+                    products[label_name]['geojson_path'] = label
+                    break
         except Exception as e:
             print(f"Error: {e}")
             continue

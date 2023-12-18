@@ -189,7 +189,7 @@ class L2A_Analysis(object):
         """
         self.locations = {}
         for loc_name, loc_path in locs.items():
-            loc_product_description = loc_path.split(".")
+            loc_product_description = loc_path.name.split(".")
             if loc_product_description[-1] != "SAFE":
                 raise ValueError(
                     f"Invalid product description: {loc_product_description}. Expected SAFE file"
@@ -207,7 +207,7 @@ class L2A_Analysis(object):
             self.locations[loc_name] = {
                 "loc_name": loc_name,
                 "l1c_product_name": loc_product_description[0],
-                "l1c_path": f"{self.base_input_dir}/{loc_path}",
+                "l1c_path": loc_path,
                 "mission_id": misssion_id,
                 "date_take": date_take,
                 "processing_baseline": processing_baseline,
@@ -298,7 +298,7 @@ class L2A_Analysis(object):
                 self.data_info["modified"].append(info_dict)
 
         with open(f"{self.report_dir}/data_info.json", "w") as f:
-            json.dump(self.data_info, f, indent=4)
+            json.dump(make_dict_serializable(self.data_info), f, indent=4)
 
     def read_l2a_data(self):
         # initialize data dictionaries
@@ -341,3 +341,19 @@ class L2A_Analysis(object):
         if loc_name not in self.locations.keys():
             raise ValueError(f"Invalid location name: {loc_name}")
         self.locations[loc_name]["region_of_interest"] = region_of_interest
+
+
+
+def make_dict_serializable(d):
+    for key, value in d.items():
+        if isinstance(value, dict):
+            d[key] = make_dict_serializable(value)
+        else:
+            try:
+                json.dumps(value)
+            except TypeError:
+                try:
+                    d[key] = str(value)
+                except Exception as e:
+                    raise Exception(f"Could not convert {value} to string -> dict not JSON serializable")
+    return d
