@@ -106,7 +106,6 @@ def get_sentinel2_product_ids(client: Client, labels):
             ds = gdal.OpenEx(str(label), gdal.OF_VECTOR)
             extent = ds.GetLayer().GetExtent()
             footprint = f"POLYGON(({extent[0]} {extent[2]}, {extent[1]} {extent[2]}, {extent[1]} {extent[3]}, {extent[0]} {extent[3]}, {extent[0]} {extent[2]}))"
-            print(footprint)
             prod_list = client.search(start_date,end_date,platform,footprint)
             for index, row in prod_list.iterrows():
                 # check name contains "MSIL1C"

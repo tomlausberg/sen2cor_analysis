@@ -1,9 +1,12 @@
 import os
+import shutil
 import json
 import subprocess
+from typing import Any
 import zipfile
 from datetime import datetime
 import math
+from pathlib import Path
 
 import rasterio as rio
 import rasterio.features
@@ -20,6 +23,8 @@ from sentinelsat import (
     LTAError,
     LTATriggered,
 )
+
+from copernicus import Client
 
 
 def reproject_geojson(geojson_fn, src_crs, tgt_crs, out_fn=None):
@@ -313,21 +318,23 @@ def convert_band_images_to_ndarray(image_dir, bands):
     with rio.open(image_dir + "B02.tif") as src:
         image = src.read(1)
     image_dims = image.shape
-    x_image = np.zeros(( image_dims[0] * image_dims[1], len(bands)), dtype=np.float32)
+    x_image = np.zeros((image_dims[0] * image_dims[1], len(bands)), dtype=np.float32)
     for i, band in enumerate(bands):
         with rio.open(image_dir + band + ".tif") as src:
             image = src.read(1)
-        x_image[:,i] = image.flatten()
+        x_image[:, i] = image.flatten()
     return x_image
 
-def convert_labels_to_raster_file( labels: np.ndarray, orginal_label_file, raster_file):
-    """ Converts 1d array to a 2d raster using rasterio """
-    with rio.open(orginal_label_file, 'r', driver='GTiff') as src:
+
+def convert_labels_to_raster_file(labels: np.ndarray, orginal_label_file, raster_file):
+    """Converts 1d array to a 2d raster using rasterio"""
+    with rio.open(orginal_label_file, "r", driver="GTiff") as src:
         shape = src.shape
         meta = src.meta
     labels = labels.reshape(shape)
-    with rio.open(raster_file, 'w', **meta) as dst:
+    with rio.open(raster_file, "w", **meta) as dst:
         dst.write(labels, 1)
+
 
 def convert_geojson_to_utm_raster(vector_file, raster_file, resolution=10):
     gdf = gpd.read_file(vector_file)
@@ -341,42 +348,49 @@ def convert_geojson_to_utm_raster(vector_file, raster_file, resolution=10):
     # Create a raster dataset
     with rio.Env():
         with rio.open(
-                raster_file, 'w',
-                driver='GTiff',
-                height=int((bounds[3] - bounds[1]) / resolution),
-                width=int((bounds[2] - bounds[0]) / resolution),
-                count=1,
-                dtype='uint8',
-                crs=gdf.crs,
-                transform=rio.Affine(resolution, 0, int(bounds[0]), 0, -resolution, int(bounds[3]))
+            raster_file,
+            "w",
+            driver="GTiff",
+            height=int((bounds[3] - bounds[1]) / resolution),
+            width=int((bounds[2] - bounds[0]) / resolution),
+            count=1,
+            dtype="uint8",
+            crs=gdf.crs,
+            transform=rio.Affine(
+                resolution, 0, int(bounds[0]), 0, -resolution, int(bounds[3])
+            ),
         ) as dst:
             # Rasterize the GeoDataFrame to the created raster dataset
-            mask = rio.features.geometry_mask(gdf.geometry, out_shape=dst.shape, transform=dst.transform, invert=True)
-            dst.write(mask.astype('uint8'), 1)
+            mask = rio.features.geometry_mask(
+                gdf.geometry, out_shape=dst.shape, transform=dst.transform, invert=True
+            )
+            dst.write(mask.astype("uint8"), 1)
 
 
 def get_GRANULE_dir(SAFE_dir):
-    """ Returns the path to the GRANULE directory in the SAFE directory """
+    """Returns the path to the GRANULE directory in the SAFE directory"""
     return SAFE_dir / "GRANULE" / os.listdir(SAFE_dir / "GRANULE")[0]
 
+
 def get_SAFE_extent(SAFE_dir):
-    """ Returns the extent of the SAFE directory in the form [ulx, lry, lrx, uly] """
+    """Returns the extent of the SAFE directory in the form [ulx, lry, lrx, uly]"""
     MTD_TL_xml_path = str(get_GRANULE_dir(SAFE_dir) / "MTD_TL.xml")
     root = ET.parse(MTD_TL_xml_path).getroot()
     tile_geocoding_el = root.findall(".//Tile_Geocoding")[0]
     size_el = tile_geocoding_el.findall(".//Size[@resolution='10']")[0]
-    nrow = int(size_el.find('NROWS').text)
-    ncol = int(size_el.find('NCOLS').text)
+    nrow = int(size_el.find("NROWS").text)
+    ncol = int(size_el.find("NCOLS").text)
     geoposition_element = root.findall(".//Geoposition[@resolution='10']")[0]
-    ulx = int(geoposition_element.find('ULX').text)
-    uly = int(geoposition_element.find('ULY').text)
+    ulx = int(geoposition_element.find("ULX").text)
+    uly = int(geoposition_element.find("ULY").text)
     lrx = ulx + ncol * 10
     lry = uly - nrow * 10
     return [ulx, lry, lrx, uly]
 
+
 def get_region_of_interest(raster_label, raster_SAFE_dir):
-    """ Returns the region of interest for a safe file for a corresponding label raster file 
-    
+    """Returns the region of interest for a safe file for a corresponding label raster file
+
     Parameters:
     raster_label (str): path to label raster file
     raster_SAFE_dir (str): path to safe directory
@@ -393,7 +407,7 @@ def get_region_of_interest(raster_label, raster_SAFE_dir):
     label_lry = label_uly + label_ds.RasterYSize * label_extent[5]
 
     del label_ds
-    
+
     SAFE_ulx, SAFE_lry, SAFE_lrx, SAFE_uly = get_SAFE_extent(raster_SAFE_dir)
 
     row0 = math.floor((SAFE_uly - label_uly) / 10)
@@ -401,8 +415,12 @@ def get_region_of_interest(raster_label, raster_SAFE_dir):
     nrow_win = math.ceil((label_uly - label_lry) / 10)
     ncol_win = math.ceil((label_lrx - label_ulx) / 10)
 
-    print(f'label_extent: ulx: {label_ulx}\tuly: {label_uly}\tlrx: {label_lrx}\tlry: {label_lry}')
-    print(f'SAFE_extent: ulx:  {SAFE_ulx}\tuly: {SAFE_uly}\tlrx: {SAFE_lrx}\tlry: {SAFE_lry}')
+    print(
+        f"label_extent: ulx: {label_ulx}\tuly: {label_uly}\tlrx: {label_lrx}\tlry: {label_lry}"
+    )
+    print(
+        f"SAFE_extent: ulx:  {SAFE_ulx}\tuly: {SAFE_uly}\tlrx: {SAFE_lrx}\tlry: {SAFE_lry}"
+    )
     return [row0, col0, nrow_win, ncol_win]
 
 
@@ -413,21 +431,201 @@ def transform_roi_for_sen2cor(roi):
         roi (list): [first_row, first_col, nrow, ncol]
 
     Returns:
-        sen2cor_roi (list): [row0, col0, nrow_win, ncol_win] 
+        sen2cor_roi (list): [row0, col0, nrow_win, ncol_win]
             row0, col0: specifies the midpoint of the region of interest
             nrow_win, ncol_win defines a rectangle around the midpoint in pixel
             row0, col0, nrow_win and ncol_win must be integer divisible by 6, to prevent rounding errors for downsampling
             specify always a 10m resolution ROI, it will be automatically adapted to the lower resolutions
 
     """
-    buffer = 12 # 12 pixel buffer around the roi
+    buffer = 12  # 12 pixel buffer around the roi
 
-    nrow_win =  math.ceil(roi[2] / 6) * 6 + buffer # make sure nrow_win is divisible by 6
-    ncol_win =  math.ceil(roi[3] / 6) * 6 + buffer
+    nrow_win = (
+        math.ceil(roi[2] / 6) * 6 + buffer
+    )  # make sure nrow_win is divisible by 6
+    ncol_win = math.ceil(roi[3] / 6) * 6 + buffer
 
-    row0 = roi[0] + math.floor(roi[2] / 2) # center of roi
+    row0 = roi[0] + math.floor(roi[2] / 2)  # center of roi
     col0 = roi[1] + math.floor(roi[3] / 2)
 
     sen2cor_roi = [str(row0), str(col0), str(nrow_win), str(ncol_win)]
 
     return sen2cor_roi
+
+
+class SN7_Location(object):
+    """Class to create and manage a directory for a SN7 location
+    Example directory structure:
+    SN7_Location (e.g. "1025E")
+    ├── L1C.SAFE
+    ├── IMG_DATA
+    │   ├── Reference
+    │   │   ├── R10m, R20m, R60m
+    │   ├── Mod1, ...
+    │   │   ├── R10m, R20m, R60m
+    ├── metadata.json
+    ├── raster_labels.tif
+    """
+
+    def __init__(self, path: Path, label) -> None:
+        self.path = path
+        self.metadata_json = self.path / "metadata.json"
+        self.l1c_path = Path("None")
+        self.l2a_path = Path("None")
+        self.raster_labels_path = Path("None")
+        self.vector_labels_path = Path("None")
+        self.l2a_mods = []
+
+        self.label = label        
+
+        self.product_name = None
+        self.product_id = None
+
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        if os.path.isfile(self.metadata_json):
+            self.load_metadata()
+        else:
+            self.update_metadata()
+
+    def __str__(self) -> str:
+        return f"Location({self.label})"
+    
+    def __repr__(self) -> str:
+        return f"Location({self.label})"
+
+    def init_labels(self, vector_label_path):
+        """
+        Setup raster labels for the location
+        - reproject to UTM
+        - rasterize
+        - copy to location
+        """
+        if self.vector_labels_path != Path("None"):
+            print(f"Labels already set")
+        else:
+            self.vector_labels_path = vector_label_path
+        
+        if self.raster_labels_path != Path("None"):
+            print(f"Raster labels already set")
+        else:
+            self.raster_labels_path = self.path / "raster_labels.tif"
+            convert_geojson_to_utm_raster(vector_label_path, self.raster_labels_path)
+
+        self.update_metadata()
+
+    def init_l1c(self, client: Client , download_path):
+        start_date = "2020-01-01"
+        end_date = "2020-01-31"
+        platform = "SENTINEL-2"
+
+        # Get product id
+        if self.vector_labels_path == Path("None"):
+            raise Exception("Labels not set")
+        if self.product_id is None:
+            ds = gdal.OpenEx(str(self.vector_labels_path), gdal.OF_VECTOR)
+            extent = ds.GetLayer().GetExtent()
+            footprint = f"POLYGON(({extent[0]} {extent[2]}, {extent[1]} {extent[2]}, {extent[1]} {extent[3]}, {extent[0]} {extent[3]}, {extent[0]} {extent[2]}))"
+            prod_list = client.search(start_date,end_date,platform,footprint)
+            for index, row in prod_list.iterrows():
+                if "MSIL1C" in row['Name']: # Only use L1C products
+                    self.product_id = row['Id']
+                    self.product_name = row['Name']
+                    break
+        else: 
+            print(f"Product {self.product_id} already found")
+        if self.product_id is None:
+            raise Exception("No product found")
+
+        # Download product
+        if self.l1c_path == Path("None"):
+            SAFE_download_path = download_path / f"{self.label}.zip"
+            if SAFE_download_path.exists() == False:
+                print(f"Downloading {self.product_name}, {self.product_id}...")
+                client.download(self.product_id, SAFE_download_path)
+            else:
+                print(f"Product {self.product_name} already downloaded")
+
+            self.set_l1c(SAFE_download_path)
+        else:
+            print(f"Product {self.product_name} already downloaded")
+        self.update_metadata()
+
+
+    def set_l1c(self, l1c_zip_path):
+        """
+        Setup L1C for the location
+        - unzip
+        - move to location
+        """
+        self.l1c_path = self.path / "L1C.SAFE"
+
+        extract_dir = self.path / "extract"
+        extract_dir.mkdir(exist_ok=True)
+
+        with zipfile.ZipFile(l1c_zip_path, "r") as zip_ref:
+            zip_ref.extractall(extract_dir)
+        # rename .SAFE file to L1C.SAFE
+        os.rename(extract_dir / self.product_name, self.l1c_path)
+        os.rmdir(extract_dir)
+
+        self.update_metadata()
+
+    def set_l2a_data(self, l2a_path):
+        """
+        Extract L2A for the location
+        - find mods in l2a_dir
+        - copy bands to sample directory
+        """
+
+        os.makedirs(self.path / "IMG_DATA", exist_ok=True)
+        self.l2a_path = l2a_path
+        self.mods = [
+            mod for mod in os.listdir(l2a_path) if os.path.isdir(l2a_path / mod)
+        ]
+
+        for mod in self.mods:
+            mod_path = self.path / "IMG_DATA" / mod
+            os.makedirs(mod_path, exist_ok=True)
+            img_data_path = (
+                l2a_path / mod / get_GRANULE_dir(l2a_path / mod) / "IMG_DATA"
+            )
+
+            # copy to /IMG_DATA/mod
+            for res in os.listdir(img_data_path):
+                shutil.copytree(img_data_path / res, mod_path / res)
+
+        self.update_metadata()
+
+    def update_metadata(self):
+        with open(self.metadata_json, "w") as f:
+            metadata = {
+                "l1c_path": str(self.l1c_path),
+                "l2a_path": str(self.l2a_path),
+                "vector_labels_path": str(self.vector_labels_path),
+                "raster_labels_path": str(self.raster_labels_path),
+                "path": str(self.path),
+                "l2a_mods": self.l2a_mods,
+                "label": self.label,
+                "product_name": self.product_name,
+                "product_id": self.product_id,
+            }
+            json.dump(metadata, f, indent=4)
+
+    def load_metadata(self):
+        with open(self.metadata_json, "r") as f:
+            metadata = json.load(f)
+            self.l1c_path = Path(metadata["l1c_path"])
+            self.l2a_path = Path(metadata["l2a_path"])
+            self.vector_labels_path = Path(metadata["vector_labels_path"])
+            self.raster_labels_path = Path(metadata["raster_labels_path"])
+            self.l2a_mods = metadata["l2a_mods"]
+            self.label = metadata["label"]
+            self.product_name = metadata["product_name"]
+            self.product_id = metadata["product_id"]
+
+    def get_region_of_interest(self):
+        return get_region_of_interest(self.raster_labels_path, self.l1c_path)
+    
+    
