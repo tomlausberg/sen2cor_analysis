@@ -1,4 +1,5 @@
 import os
+import subprocess
 import rasterio
 import numpy as np
 import xml.etree.ElementTree as ET
@@ -6,7 +7,7 @@ import pathlib
 
 
 # SEN2COR_HOME = "/scratch/toml/Sen2Cor-02.11.00-Linux64"
-SEN2COR_HOME = pathlib.Path("C:/Users/tlaus/Documents/local/semester_thesis/Sen2Cor-02.11.00-win64")
+SEN2COR_HOME = pathlib.Path("C:/Users/tlaus/Documents/local/semester_thesis/Sen2Cor-02.11.00-win64-mod")
 
 input_dir = "input"
 output_dir = "output"
@@ -18,6 +19,7 @@ def modify_GIPP(reference_GIPP, custom_GIPP, region_of_interest=None):
     
     # set region of interest
     if region_of_interest is not None:
+        print("Setting region of interest to ", region_of_interest)
         root.find("Common_Section").find("Region_Of_Interest").find("row0").text = region_of_interest[0]
         root.find("Common_Section").find("Region_Of_Interest").find("col0").text = region_of_interest[1]
         root.find("Common_Section").find("Region_Of_Interest").find("nrow_win").text = region_of_interest[2]
@@ -66,6 +68,8 @@ def modify_GIPP(reference_GIPP, custom_GIPP, region_of_interest=None):
     
     # write changes to custom GIPP
     GIPP_tree.write(custom_GIPP)
+    print("Wrote custom GIPP to ", custom_GIPP)
+
     
     
 class L2A_process_runner:
@@ -102,7 +106,7 @@ class L2A_process_runner:
         # reference_GIPP =  pathlib.Path("/home/toml/sen2cor/2.11/cfg/L2A_GIPP.xml")
         # custom_GIPP = pathlib.Path("/home/toml/sen2cor/2.11/cfg/L2A_GIPP_custom.xml")
         reference_GIPP =  pathlib.Path("C:/Users/tlaus/Documents/sen2cor/2.11/cfg/L2A_GIPP.xml")
-        custom_GIPP = pathlib.Path("C:/Users/tlaus/Documents/sen2cor/2.11/cfg/L2A_GIPP_custom.xml")
+        custom_GIPP =     pathlib.Path("C:/Users/tlaus/Documents/sen2cor/2.11/cfg/L2A_GIPP_custom.xml")
 
         modify_GIPP(reference_GIPP, custom_GIPP, region_of_interest=region_of_interest)
 
@@ -113,7 +117,8 @@ class L2A_process_runner:
 
         cmd = f"{self.l2a_process_loc} {self.input_dir} --resolution {self.resolution} --GIP_L2A {custom_GIPP} --output_dir {self.output_dir}{sc_only}"
         print("Running command: ", cmd)
-        os.system(cmd)
+        output = subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.STDOUT)
+        print(output)
 
 
 if __name__ == "__main__":

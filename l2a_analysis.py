@@ -1,11 +1,13 @@
 import os
 import json
+from typing import List
+from pathlib import Path
 
 import rasterio as rio
 import numpy as np
 
 import l2a_runner
-
+from building_detection.building_dection import SN7_Location
 
 class L2A_Band(object):
     def __init__(self, jp2_path, name, band_id):
@@ -216,6 +218,34 @@ class L2A_Analysis(object):
                 "product_discriminator": product_discriminator.split(".")[0],
             }
 
+    def set_locations_sn7(self, locs: list[SN7_Location]):
+        self.locations = {}
+        for loc in locs:
+            print(f"Adding location {loc.path.name}, {loc.product_name}")
+            loc_name = loc.path.name
+            (
+                misssion_id,
+                product_level,
+                date_take,
+                processing_baseline,
+                orbit_number,
+                tile,
+                product_discriminator,
+            ) = loc.product_name.split(".")[0].split("_")
+
+            self.locations[loc_name] = {
+                "loc_name": loc_name,
+                "l1c_product_name": loc.product_name,
+                "l1c_path": str(loc.l1c_path),
+                "mission_id": misssion_id,
+                "date_take": date_take,
+                "processing_baseline": processing_baseline,
+                "orbit_number": orbit_number,
+                "tile": tile,
+                "product_discriminator": product_discriminator.split(".")[0],
+            }
+            self.add_region_of_interest(loc_name, loc.roi)
+
     def set_modifications(self, modifications):
         """
         Set modifications from a list of dictionaries
@@ -241,7 +271,7 @@ class L2A_Analysis(object):
         self.data_info["reference"] = []
         for loc_name, loc_dict in self.locations.items():
             mod_name = "reference"
-            output_dir = f"{self.report_dir}/{loc_name}/{mod_name}"
+            output_dir = Path(self.report_dir) / loc_name / mod_name
 
             if os.path.isdir(output_dir) and len(os.listdir(output_dir)) > 0:
                 print(output_dir)
@@ -338,6 +368,18 @@ class L2A_Analysis(object):
         os.system(f"rm -r {self.report_dir}")
 
     def add_region_of_interest(self, loc_name, region_of_interest):
+        # check if roi values are divisible by 6
+        if region_of_interest is not None:
+            if len(region_of_interest) != 4:
+                raise ValueError(
+                    f"Invalid region of interest: {region_of_interest}, expected list of length 4"
+                )
+            for val in region_of_interest:
+                if int(val) % 6 != 0:
+                    raise ValueError(
+                        f"Invalid region of interest: {region_of_interest}, expected values to be divisible by 6"
+                    )
+
         if loc_name not in self.locations.keys():
             raise ValueError(f"Invalid location name: {loc_name}")
         self.locations[loc_name]["region_of_interest"] = region_of_interest

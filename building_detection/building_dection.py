@@ -438,15 +438,20 @@ def transform_roi_for_sen2cor(roi):
             specify always a 10m resolution ROI, it will be automatically adapted to the lower resolutions
 
     """
-    buffer = 12  # 12 pixel buffer around the roi
-
+    buffer = 24 # 12 pixel buffer around the roi
+    div = 12
     nrow_win = (
-        math.ceil(roi[2] / 6) * 6 + buffer
+        math.ceil(roi[2] / div) * div + buffer
     )  # make sure nrow_win is divisible by 6
-    ncol_win = math.ceil(roi[3] / 6) * 6 + buffer
+    ncol_win = math.ceil(roi[3] / div) * div + buffer
 
-    row0 = roi[0] + math.floor(roi[2] / 2)  # center of roi
+    row0 = roi[0] + math.floor(roi[2] / 2) 
+    row0 = row0 - (row0 % div)  # make sure row0 is divisible by 6
     col0 = roi[1] + math.floor(roi[3] / 2)
+    col0 = col0 - (col0 % div)  # make sure col0 is divisible by 6
+
+    if row0 < nrow_win or col0 < ncol_win:
+        raise Exception("ROI not covered by image")
 
     sen2cor_roi = [str(row0), str(col0), str(nrow_win), str(ncol_win)]
 
@@ -474,7 +479,9 @@ class SN7_Location(object):
         self.l2a_path = Path("None")
         self.raster_labels_path = Path("None")
         self.vector_labels_path = Path("None")
+
         self.l2a_mods = []
+        self.roi = None
 
         self.label = label        
 
@@ -550,6 +557,8 @@ class SN7_Location(object):
             self.set_l1c(SAFE_download_path)
         else:
             print(f"Product {self.product_name} already downloaded")
+
+        self.roi = self.get_region_of_interest()
         self.update_metadata()
 
 
@@ -559,7 +568,7 @@ class SN7_Location(object):
         - unzip
         - move to location
         """
-        self.l1c_path = self.path / "L1C.SAFE"
+        self.l1c_path = self.path / self.product_name
 
         extract_dir = self.path / "extract"
         extract_dir.mkdir(exist_ok=True)
@@ -607,6 +616,7 @@ class SN7_Location(object):
                 "raster_labels_path": str(self.raster_labels_path),
                 "path": str(self.path),
                 "l2a_mods": self.l2a_mods,
+                "roi": self.roi,
                 "label": self.label,
                 "product_name": self.product_name,
                 "product_id": self.product_id,
@@ -621,11 +631,13 @@ class SN7_Location(object):
             self.vector_labels_path = Path(metadata["vector_labels_path"])
             self.raster_labels_path = Path(metadata["raster_labels_path"])
             self.l2a_mods = metadata["l2a_mods"]
+            self.roi = metadata["roi"]
             self.label = metadata["label"]
             self.product_name = metadata["product_name"]
             self.product_id = metadata["product_id"]
 
     def get_region_of_interest(self):
-        return get_region_of_interest(self.raster_labels_path, self.l1c_path)
+        roi = get_region_of_interest(self.raster_labels_path, self.l1c_path)
+        return transform_roi_for_sen2cor(roi)
     
     
