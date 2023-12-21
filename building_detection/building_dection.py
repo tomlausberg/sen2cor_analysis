@@ -640,4 +640,36 @@ class SN7_Location(object):
         roi = get_region_of_interest(self.raster_labels_path, self.l1c_path)
         return transform_roi_for_sen2cor(roi)
     
-    
+    def init_l2a(self,l2aa):
+        r10m_bands = ['B02', 'B03', 'B04', 'B08', 'AOT', 'WVP']
+        r20m_bands = ['B01', 'B05', 'B06', 'B07', 'B8A', 'B11', 'B12', 'SCL']
+        self.l2a_path = Path(l2aa.report_dir) / self.path.name
+        self.l2a_mods = os.listdir(self.l2a_path)
+        for mod in self.l2a_mods:
+            mod_safe_path = self.l2a_path / mod / os.listdir(self.l2a_path / mod)[0]
+            
+            r10m_src = get_GRANULE_dir(mod_safe_path) / "IMG_DATA" / "R10m"
+            r10m_dst = self.path / 'IMG_DATA' / mod / 'R10m'
+            r10m_dst.mkdir(parents=True, exist_ok=True)
+            
+            r20_src = get_GRANULE_dir(mod_safe_path) / "IMG_DATA" / "R20m"
+            r20_dst = self.path / 'IMG_DATA' / mod / 'R20m'
+            r20_dst.mkdir(parents=True, exist_ok=True)
+
+            for band in r10m_bands:
+                for image in os.listdir(r10m_src):
+                    if f"{band}_10m.jp2" in image:
+                        image_path = r10m_src / image
+                        shutil.copy(image_path, r10m_dst)
+                        print(f"Copy {image_path} to {r10m_dst}")
+                        break
+                print(f"WARNING: Could not find {band}_10m.jp2 in {r10m_src}")
+            
+            for band in r20m_bands:
+                for image in os.listdir(r20_src):
+                    if f"{band}_20m.jp2" in image:
+                        image_path = r20_src / image
+                        shutil.copy(image_path, r20_dst)
+                        print(f"Copy {image_path} to {r20_dst}")
+                        break
+                print(f"WARNING: Could not find {band}_20m.jp2 in {r20_src}")

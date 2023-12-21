@@ -316,7 +316,10 @@ class L2A_Analysis(object):
                     runner = l2a_runner.L2A_process_runner(
                         loc_dict["l1c_path"], output_dir, resolution=self.resolution
                     )
-                    runner.run()
+                    if loc_dict.get("region_of_interest") == "None" or loc_dict.get("region_of_interest") is None:
+                        runner.run()
+                    else:
+                        runner.run(region_of_interest=loc_dict["region_of_interest"])
                     os.environ.pop(mod_flag, None)
 
                 info_dict = {
