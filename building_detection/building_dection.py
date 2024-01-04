@@ -11,6 +11,8 @@ from pathlib import Path
 import rasterio as rio
 import rasterio.features
 import geopandas as gpd
+from shapely.geometry import Point
+import pandas as pd
 import numpy as np
 import pyproj
 from osgeo import gdal
@@ -438,14 +440,14 @@ def transform_roi_for_sen2cor(roi):
             specify always a 10m resolution ROI, it will be automatically adapted to the lower resolutions
 
     """
-    buffer = 24 # 12 pixel buffer around the roi
+    buffer = 24  # 12 pixel buffer around the roi
     div = 12
     nrow_win = (
         math.ceil(roi[2] / div) * div + buffer
     )  # make sure nrow_win is divisible by 6
     ncol_win = math.ceil(roi[3] / div) * div + buffer
 
-    row0 = roi[0] + math.floor(roi[2] / 2) 
+    row0 = roi[0] + math.floor(roi[2] / 2)
     row0 = row0 - (row0 % div)  # make sure row0 is divisible by 6
     col0 = roi[1] + math.floor(roi[3] / 2)
     col0 = col0 - (col0 % div)  # make sure col0 is divisible by 6
@@ -480,10 +482,13 @@ class SN7_Location(object):
         self.raster_labels_path = Path("None")
         self.vector_labels_path = Path("None")
 
+        self.r10m_bands = ["B02", "B03", "B04", "B08", "AOT", "WVP"]
+        self.r20m_bands = ["B05", "B06", "B07", "B8A", "B11", "B12", "SCL"]
+
         self.l2a_mods = []
         self.roi = None
 
-        self.label = label        
+        self.label = label
 
         self.product_name = None
         self.product_id = None
@@ -498,7 +503,7 @@ class SN7_Location(object):
 
     def __str__(self) -> str:
         return f"Location({self.label})"
-    
+
     def __repr__(self) -> str:
         return f"Location({self.label})"
 
@@ -513,7 +518,7 @@ class SN7_Location(object):
             print(f"Labels already set")
         else:
             self.vector_labels_path = vector_label_path
-        
+
         if self.raster_labels_path != Path("None"):
             print(f"Raster labels already set")
         else:
@@ -522,7 +527,7 @@ class SN7_Location(object):
 
         self.update_metadata()
 
-    def init_l1c(self, client: Client , download_path):
+    def init_l1c(self, client: Client, download_path):
         start_date = "2020-01-01"
         end_date = "2020-01-31"
         platform = "SENTINEL-2"
@@ -534,13 +539,13 @@ class SN7_Location(object):
             ds = gdal.OpenEx(str(self.vector_labels_path), gdal.OF_VECTOR)
             extent = ds.GetLayer().GetExtent()
             footprint = f"POLYGON(({extent[0]} {extent[2]}, {extent[1]} {extent[2]}, {extent[1]} {extent[3]}, {extent[0]} {extent[3]}, {extent[0]} {extent[2]}))"
-            prod_list = client.search(start_date,end_date,platform,footprint)
+            prod_list = client.search(start_date, end_date, platform, footprint)
             for index, row in prod_list.iterrows():
-                if "MSIL1C" in row['Name']: # Only use L1C products
-                    self.product_id = row['Id']
-                    self.product_name = row['Name']
+                if "MSIL1C" in row["Name"]:  # Only use L1C products
+                    self.product_id = row["Id"]
+                    self.product_name = row["Name"]
                     break
-        else: 
+        else:
             print(f"Product {self.product_id} already found")
         if self.product_id is None:
             raise Exception("No product found")
@@ -560,7 +565,6 @@ class SN7_Location(object):
 
         self.roi = self.get_region_of_interest()
         self.update_metadata()
-
 
     def set_l1c(self, l1c_zip_path):
         """
@@ -639,37 +643,177 @@ class SN7_Location(object):
     def get_region_of_interest(self):
         roi = get_region_of_interest(self.raster_labels_path, self.l1c_path)
         return transform_roi_for_sen2cor(roi)
-    
-    def init_l2a(self,l2aa):
-        r10m_bands = ['B02', 'B03', 'B04', 'B08', 'AOT', 'WVP']
-        r20m_bands = ['B01', 'B05', 'B06', 'B07', 'B8A', 'B11', 'B12', 'SCL']
+
+    def init_l2a(self, l2aa):
         self.l2a_path = Path(l2aa.report_dir) / self.path.name
         self.l2a_mods = os.listdir(self.l2a_path)
         for mod in self.l2a_mods:
             mod_safe_path = self.l2a_path / mod / os.listdir(self.l2a_path / mod)[0]
-            
-            r10m_src = get_GRANULE_dir(mod_safe_path) / "IMG_DATA" / "R10m"
-            r10m_dst = self.path / 'IMG_DATA' / mod / 'R10m'
-            r10m_dst.mkdir(parents=True, exist_ok=True)
-            
-            r20_src = get_GRANULE_dir(mod_safe_path) / "IMG_DATA" / "R20m"
-            r20_dst = self.path / 'IMG_DATA' / mod / 'R20m'
-            r20_dst.mkdir(parents=True, exist_ok=True)
 
-            for band in r10m_bands:
+            r10m_src = get_GRANULE_dir(mod_safe_path) / "IMG_DATA" / "R10m"
+            r10m_dst = self.path / "IMG_DATA" / mod / "R10m"
+            r10m_dst.mkdir(parents=True, exist_ok=True)
+
+            r20m_src = get_GRANULE_dir(mod_safe_path) / "IMG_DATA" / "R20m"
+            r20m_dst = self.path / "IMG_DATA" / mod / "R20m"
+            r20m_dst.mkdir(parents=True, exist_ok=True)
+
+            print(f"Copy bands from {r10m_src} to {r10m_dst}")
+            for f in os.listdir(r10m_src):
+                print(f"\tCopy {r10m_src / f} \n\tto {r10m_dst}")
+            print(f"Copy bands from {r20m_src} to {r20m_dst}")
+
+            for band in self.r10m_bands:
+                found = False
                 for image in os.listdir(r10m_src):
-                    if f"{band}_10m.jp2" in image:
+                    file_name = f"{band}_10m.jp2"
+                    if file_name in image:
                         image_path = r10m_src / image
                         shutil.copy(image_path, r10m_dst)
                         print(f"Copy {image_path} to {r10m_dst}")
+                        found = True
                         break
-                print(f"WARNING: Could not find {band}_10m.jp2 in {r10m_src}")
-            
-            for band in r20m_bands:
-                for image in os.listdir(r20_src):
+                if not found:
+                    print(f"WARNING: Could not find {band}_10m.jp2 in {r10m_src}")
+
+            for band in self.r20m_bands:
+                for image in os.listdir(r20m_src):
                     if f"{band}_20m.jp2" in image:
-                        image_path = r20_src / image
-                        shutil.copy(image_path, r20_dst)
-                        print(f"Copy {image_path} to {r20_dst}")
+                        image_path = r20m_src / image
+                        shutil.copy(image_path, r20m_dst)
+                        print(f"Copy {image_path} to {r20m_dst}")
                         break
-                print(f"WARNING: Could not find {band}_20m.jp2 in {r20_src}")
+                print(f"WARNING: Could not find {band}_20m.jp2 in {r20m_src}")
+
+    def get_sample_points(self, number_of_points, ratio):
+        """
+        Parameters:
+            number_of_points (int): number of points to sample
+            ratio (float): ratio of positive to negative samples
+
+        Returns:
+            samples: (geopandas.GeoDataFrame): gdf of sample points in the form [row, col, label]
+        """
+
+        with rio.open(self.raster_labels_path) as ds:
+            label = ds.read(1)
+            label_shape = label.shape
+            # label = label.flatten()
+
+        # get positive and negative samples
+        positive_samples = np.argwhere(label == 1)
+        negative_samples = np.argwhere(label == 0)
+
+        # sample positive and negative samples
+        positive_samples = positive_samples[
+            np.random.choice(positive_samples.shape[0], int(number_of_points * ratio))
+        ]
+        negative_samples = negative_samples[
+            np.random.choice(
+                negative_samples.shape[0], int(number_of_points * (1 - ratio))
+            )
+        ]
+
+        # add label to samples
+        positive_samples = np.concatenate(
+            (positive_samples, np.ones((positive_samples.shape[0], 1))), axis=1
+        )
+
+        negative_samples = np.concatenate(
+            (negative_samples, np.zeros((negative_samples.shape[0], 1))), axis=1
+        )
+
+        # combine positive and negative samples
+        samples = np.concatenate((positive_samples, negative_samples), axis=0)
+
+        # add Point geometry to samples
+        geometries = np.array(
+            [
+                Point(
+                    rio.transform.xy(
+                        ds.transform, sample[0], sample[1], offset="center"
+                    )
+                )
+                for sample in samples
+            ]
+        )
+
+        # convert to gdf
+        samples_gdf = gpd.GeoDataFrame(samples, columns=["row", "col", "label"])
+        samples_gdf.set_geometry(geometries, inplace=True)
+
+        # set crs
+        samples_gdf.crs = ds.crs
+        return samples_gdf
+
+    def get_samples(self, number_of_points, ratio, mod):
+        """
+        Parameters:
+            number_of_points (int): number of points to sample
+            ratio (float): ratio of positive to negative samples
+            mod (str): mod to sample from
+
+        Returns:
+            samples: (geopandas.GeoDataFrame): gdf of sample points in the form [row, col, label, band1, band2, ...]
+        """
+
+        samples = self.get_sample_points(number_of_points, ratio)
+        coord_list = [(x, y) for x, y in zip(samples["geometry"].x, samples["geometry"].y)]
+        # add bands to samples
+
+        for band in self.r10m_bands:
+            # get the path of the file name containing the band
+            band_path = self.path / "IMG_DATA" / mod / "R10m"
+            band_path = band_path / [f for f in os.listdir(band_path) if band in f][0]
+
+            with rio.open(band_path) as ds:
+                # get the value of the band at the sample points
+                samples[band] = [x[0] for x in ds.sample(coord_list)]
+
+        for band in self.r20m_bands:
+            # get the path of the file name containing the band
+            try:
+                band_path = self.path / "IMG_DATA" / mod / "R20m"
+                band_path = band_path / [f for f in os.listdir(band_path) if band in f][0]
+                with rio.open(band_path) as ds:
+                    # get the value of the band at the sample points
+                    samples[band] = [x[0] for x in ds.sample(coord_list)]
+            except IndexError:
+                print(f"Could not find {band} in {self.path / 'IMG_DATA' / mod / 'R20m'}")
+                continue
+                # raise FileNotFoundError(f"Could not find {band} in {self.path / 'IMG_DATA' / mod / 'R20m'}")
+
+
+        return samples
+    
+def convert_gdf_to_ndarray(gdf):
+    """
+    Parameters:
+        gdf (geopandas.GeoDataFrame): gdf of sample points in the form [row, col, label, band1, band2, ...]
+    Returns:
+        samples: (np.ndarray): array of sample points in the form [label, band1, band2, ...]
+    """
+
+    samples = gdf.drop(columns=["geometry", "row", "col"])
+    return samples.to_numpy()
+
+
+def create_dataset( sn7_locations, number_of_points, ratio, mod):
+    """
+    Parameters:
+        sn7_locations (list): list of SN7_Location objects
+        number_of_points (int): number of points to sample
+        ratio (float): ratio of positive to negative samples
+        mod (str): mod to sample from
+
+    Returns:
+        dataset: (np.ndarray): array of sample points in the form [label, band1, band2, ...]
+    """
+    dataset = []
+    for location in sn7_locations:
+        location_samples = location.get_samples(number_of_points / len(sn7_locations), ratio, mod)
+        sample_array = convert_gdf_to_ndarray(location_samples)
+        dataset.append(sample_array)
+    
+    dataset = np.concatenate(dataset, axis=0)
+    return dataset
