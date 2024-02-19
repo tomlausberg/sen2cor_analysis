@@ -93,10 +93,11 @@ def plot_rgb_image(
     ax.set_title(title)
     ax.set_axis_off()
     plt.show()
+    return plt
 
 
 def plot_true_color_image(product, gamma=1, title="True Color Image", clip_value=65536):
-    plot_rgb_image(product, "B04", "B03", "B02", clip_value, gamma, title)
+    return plot_rgb_image(product, "B04", "B03", "B02", clip_value, gamma, title)
 
 
 def plot_band(
@@ -175,7 +176,8 @@ def plot_scl_as_bar_chart(reference: L2A_Band_Stack, title=None):
             np.sum(scl_array == class_dict[scene_class]["value"]),
             color=mcolors.to_hex(np.array(class_dict[scene_class]["color"]) / 255),
         )
-    ax.set_title(f"Scene Classification for {title}")
+    if title is not None:
+        ax.set_title(title)
     plt.xticks(rotation=45, ha="right")
     plt.show()
 
@@ -250,7 +252,7 @@ def multiplot_difference_histogram(
 
                 ax[mods.index(mod), locs.index(loc)].hist(
                     difference_array,
-                    bins=100,
+                    bins=50,
                     alpha=0.5,
                     label=band,
                 )
@@ -259,6 +261,8 @@ def multiplot_difference_histogram(
                 ax[mods.index(mod), locs.index(loc)].set_title(f"{loc} {mod}")
                 ax[mods.index(mod), locs.index(loc)].set_yscale("log")
                 ax[mods.index(mod), locs.index(loc)].legend()
+    
+    plt.savefig('multi_histogram.pdf')
 
 
 def get_stats(reference, modified, bands):

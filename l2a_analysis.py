@@ -159,7 +159,7 @@ class L2A_Analysis(object):
             self.base_output_dir = base_output_dir
         else:
             self.base_output_dir = "/scratch/toml/sentinel_2_data/reports"
-        self.report_dir = f"{self.base_output_dir}/{report_name}"
+        self.report_dir = Path(self.base_output_dir) / report_name
         if resolution not in [10, 20, 60]:
             raise ValueError(
                 f"Invalid resolution: {resolution}, expected one of [10, 20, 60]"
@@ -191,7 +191,9 @@ class L2A_Analysis(object):
         """
         self.locations = {}
         for loc_name, loc_path in locs.items():
-            loc_product_description = loc_path.name.split(".")
+            if type(loc_path) is Path:
+                loc_path = str(loc_path)
+            loc_product_description = loc_path.split(".")
             if loc_product_description[-1] != "SAFE":
                 raise ValueError(
                     f"Invalid product description: {loc_product_description}. Expected SAFE file"
@@ -204,7 +206,7 @@ class L2A_Analysis(object):
                 orbit_number,
                 tile,
                 product_discriminator,
-            ) = loc_product_description[0].split("_")
+            ) = loc_product_description[0].split("_")[-7:]
 
             self.locations[loc_name] = {
                 "loc_name": loc_name,
@@ -331,7 +333,8 @@ class L2A_Analysis(object):
                 self.data_info["modified"].append(info_dict)
 
         with open(f"{self.report_dir}/data_info.json", "w") as f:
-            json.dump(make_dict_serializable(self.data_info), f, indent=4)
+            data_info_copy = self.data_info.copy()
+            json.dump(make_dict_serializable(data_info_copy), f, indent=4)
 
     def read_l2a_data(self):
         # initialize data dictionaries
@@ -390,7 +393,8 @@ class L2A_Analysis(object):
 
 
 def make_dict_serializable(d):
-    for key, value in d.items():
+    d_copy = d.copy()
+    for key, value in d_copy.items():
         if isinstance(value, dict):
             d[key] = make_dict_serializable(value)
         else:

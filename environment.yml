@@ -1,0 +1,22 @@
+name: sen2cor
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - gdal
+  - numpy
+  - pandas
+  - matplotlib
+  # - rasterio
+  - pyproj
+  - scikit-learn
+  
+  - joblib
+  - requests
+  - ipython
+  - pip
+  - pip:
+    - rasterio
+    - geopandas
+    - scikit-cuda
